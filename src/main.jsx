@@ -4,12 +4,17 @@ import {
   ArrowLeft, ArrowUp, Bell, Check, CheckCheck, ChevronDown, ChevronLeft, CircleHelp,
   ImagePlus, Info, LogOut, MessageCircle, MoreHorizontal, Paperclip, Pencil,
   Plus, Search, Send, Settings, Smile, Sparkles, User, UserPlus, X, Camera,
-  Menu, Moon, Sun, CheckCircle2, Lock, Mail, ShieldCheck, PanelLeftClose, Home, MessageSquare, PlusCircle, UserCircle, BellRing, ArrowRight, Image, FileText
+  Menu, Moon, Sun, CheckCircle2, Lock, Mail, ShieldCheck, PanelLeftClose, Home, MessageSquare, PlusCircle, UserCircle, BellRing, ArrowRight, Image, FileText, Eye, EyeOff
 } from 'lucide-react';
 import { isSupabaseConfigured, supabase } from './supabase';
 import './styles.css';
 
 const BRAND = 'Chatter';
+const PRODUCTION_AUTH_URL = 'https://chatter22.vercel.app/';
+const getAuthRedirectUrl = () => {
+  const { hostname, origin } = window.location;
+  return hostname === 'localhost' || hostname === '127.0.0.1' ? `${origin}/` : PRODUCTION_AUTH_URL;
+};
 const FALLBACK_COLORS = ['#397d79', '#6b5dd3', '#bc7651', '#47729d', '#9a5e88', '#8b8f4b'];
 const initials = (name = '?') => name.trim().split(/\s+/).slice(0, 2).map(s => s[0]?.toUpperCase() || '').join('') || '?';
 const timeLabel = value => {
@@ -57,23 +62,74 @@ function AuthScreen({ onDemo }) {
   const [password, setPassword] = useState('');
   const [name, setName] = useState('');
   const [busy, setBusy] = useState(false);
+  const [resending, setResending] = useState(false);
+  const [showPassword, setShowPassword] = useState(false);
   const [error, setError] = useState('');
   const [notice, setNotice] = useState('');
+
+  useEffect(() => {
+    const hashParams = new URLSearchParams(window.location.hash.replace(/^#/, ''));
+    const queryParams = new URLSearchParams(window.location.search);
+    const callbackError = hashParams.get('error_description') || queryParams.get('error_description');
+    if (callbackError) setError(callbackError.replace(/\+/g, ' '));
+  }, []);
 
   const submit = async e => {
     e.preventDefault(); setError(''); setNotice(''); setBusy(true);
     try {
       if (mode === 'signup') {
         const username = (name.trim() || email.split('@')[0]).toLowerCase().replace(/[^a-z0-9_]/g, '').slice(0, 24);
-        const { data, error: err } = await supabase.auth.signUp({ email, password, options: { emailRedirectTo: window.location.origin, data: { display_name: name.trim() || email.split('@')[0], username } } });
+        const { data, error: err } = await supabase.auth.signUp({
+          email: email.trim(),
+          password,
+          options: {
+            emailRedirectTo: getAuthRedirectUrl(),
+            data: { display_name: name.trim() || email.split('@')[0], username }
+          }
+        });
         if (err) throw err;
-        if (!data.session) setNotice('Account created. Check your email to confirm your account, then sign in.');
+        if (!data.session) setNotice('Account created. Open the confirmation link sent to your email. If it does not arrive, you can resend it below.');
       } else {
-        const { error: err } = await supabase.auth.signInWithPassword({ email, password });
+        const { error: err } = await supabase.auth.signInWithPassword({ email: email.trim(), password });
         if (err) throw err;
       }
     } catch (e2) { setError(e2.message || 'Something went wrong.'); }
     finally { setBusy(false); }
+  };
+
+  const resendConfirmation = async () => {
+    if (!email.trim()) { setError('Enter your email address first.'); return; }
+    setError(''); setNotice(''); setResending(true);
+    try {
+      const { error: err } = await supabase.auth.resend({
+        type: 'signup',
+        email: email.trim(),
+        options: { emailRedirectTo: getAuthRedirectUrl() }
+      });
+      if (err) throw err;
+      setNotice('A new confirmation email has been requested. Check your inbox and spam folder.');
+    } catch (e2) { setError(e2.message || 'Could not resend the confirmation email.'); }
+    finally { setResending(false); }
+  };
+
+  const signInWithGoogle = async () => {
+    setError(''); setNotice(''); setBusy(true);
+    try {
+      const { error: err } = await supabase.auth.signInWithOAuth({
+        provider: 'google',
+        options: {
+          redirectTo: getAuthRedirectUrl(),
+          queryParams: { prompt: 'select_account' }
+        }
+      });
+      if (err) throw err;
+    } catch (e2) {
+      const message = e2.message || 'Google sign-in could not be started.';
+      setError(/provider.*(disabled|not enabled)|unsupported provider/i.test(message)
+        ? 'Google sign-in is not enabled in Supabase yet. Enable the Google provider and add its OAuth client ID and secret.'
+        : message);
+      setBusy(false);
+    }
   };
 
   return <div className="auth-shell">
@@ -81,20 +137,25 @@ function AuthScreen({ onDemo }) {
     <div className="auth-card">
       <div className="brand-mark"><MessageCircle size={23} fill="currentColor"/><span>chatter</span><i/></div>
       <div className="auth-intro"><div className="eyebrow"><Sparkles size={13}/> YOUR SPACE, YOUR PEOPLE</div><h1>Good conversations<br/><em>start here.</em></h1><p>A quieter, more personal place to stay close.</p></div>
-      <div className="auth-tabs"><button className={mode === 'login' ? 'active' : ''} onClick={() => {setMode('login');setError('');}}>Sign in</button><button className={mode === 'signup' ? 'active' : ''} onClick={() => {setMode('signup');setError('');}}>Create account</button></div>
+      <div className="auth-tabs"><button className={mode === 'login' ? 'active' : ''} onClick={() => {setMode('login');setError('');setNotice('');}}>Sign in</button><button className={mode === 'signup' ? 'active' : ''} onClick={() => {setMode('signup');setError('');setNotice('');}}>Create account</button></div>
       <form onSubmit={submit} className="auth-form">
         {mode === 'signup' && <label>Your name<input value={name} onChange={e => setName(e.target.value)} placeholder="How should people know you?" maxLength={32} required/></label>}
         <label>Email address<div className="input-icon"><Mail size={16}/><input type="email" value={email} onChange={e => setEmail(e.target.value)} placeholder="you@example.com" autoComplete="email" required/></div></label>
-        <label>Password<div className="input-icon"><Lock size={16}/><input type="password" value={password} onChange={e => setPassword(e.target.value)} placeholder="At least 6 characters" minLength={6} autoComplete={mode === 'login' ? 'current-password' : 'new-password'} required/></div></label>
-        {error && <div className="form-error">{error}</div>}{notice && <div className="form-notice">{notice}</div>}
+        <label>Password<div className="input-icon password-input-wrap"><Lock size={16}/><input type={showPassword ? 'text' : 'password'} value={password} onChange={e => setPassword(e.target.value)} placeholder="At least 6 characters" minLength={6} autoComplete={mode === 'login' ? 'current-password' : 'new-password'} required/><button type="button" className="auth-password-toggle" onClick={() => setShowPassword(value => !value)} aria-label={showPassword ? 'Hide password' : 'Show password'} aria-pressed={showPassword} title={showPassword ? 'Hide password' : 'Show password'}>{showPassword ? <EyeOff size={16}/> : <Eye size={16}/>}</button></div></label>
+        {error && <div className="form-error">{error}</div>}
+        {notice && <div className="form-notice">{notice}{mode === 'signup' && <button type="button" className="auth-resend" onClick={resendConfirmation} disabled={resending}>{resending ? 'Requesting…' : 'Resend confirmation email'}</button>}</div>}
         <button className="primary-button auth-submit" disabled={busy}>{busy ? 'Please wait…' : mode === 'login' ? 'Continue to Chatter' : 'Create your account'}<ArrowUp size={16}/></button>
       </form>
+      <div className="auth-divider"><span>OR</span></div>
+      <button type="button" className="google-auth-button" onClick={signInWithGoogle} disabled={busy}>
+        <svg aria-hidden="true" viewBox="0 0 48 48" width="18" height="18"><path fill="#EA4335" d="M24 9.5c3.54 0 6.71 1.22 9.21 3.6l6.85-6.85C35.9 2.38 30.47 0 24 0 14.62 0 6.51 5.38 3.02 13.22l7.98 6.19C12.9 13.72 18 9.5 24 9.5z"/><path fill="#4285F4" d="M46.98 24.55c0-1.57-.15-3.09-.38-4.55H24v9.02h12.92c-.58 2.96-2.26 5.48-4.76 7.18l7.73 6C44.4 37.88 46.98 31.7 46.98 24.55z"/><path fill="#FBBC05" d="M10.99 28.59A14.4 14.4 0 0 1 10.23 24c0-1.59.27-3.13.76-4.59l-7.98-6.19A23.9 23.9 0 0 0 0 24c0 3.87.93 7.52 2.58 10.78l8.41-6.19z"/><path fill="#34A853" d="M24 48c6.48 0 11.93-2.13 15.9-5.8l-7.73-6c-2.14 1.45-4.88 2.3-8.17 2.3-6 0-11.1-4.22-12.92-9.91l-8.41 6.19C6.16 42.62 14.27 48 24 48z"/></svg>
+        Continue with Google
+      </button>
       <div className="auth-foot"><ShieldCheck size={14}/> Your conversations are protected by your account permissions.</div>
     </div>
     <div className="auth-aside"><span>01 / PERSONAL</span><span>02 / REAL-TIME</span><span>03 / YOURS</span></div>
   </div>;
 }
-
 function ProfileModal({ profile, onClose, onSave, onSignOut }) {
   const [displayName, setDisplayName] = useState(profile?.display_name || '');
   const [username, setUsername] = useState(profile?.username || '');
