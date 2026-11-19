@@ -1,0 +1,15 @@
+{
+  "name": "Chatter — Stay close",
+  "short_name": "Chatter",
+  "description": "A personal space for real-time conversations.",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "orientation": "portrait-primary",
+  "background_color": "#091318",
+  "theme_color": "#091318",
+  "icons": [
+    { "src": "/icons/icon-192.svg", "sizes": "192x192", "type": "image/svg+xml", "purpose": "any maskable" },
+    { "src": "/icons/icon-512.svg", "sizes": "512x512", "type": "image/svg+xml", "purpose": "any maskable" }
+  ]
+}
