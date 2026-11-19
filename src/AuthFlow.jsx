@@ -18,7 +18,7 @@ function getFriendlyAuthError(error, mode) {
   if (code === 'over_email_send_rate_limit' || /email rate limit exceeded/i.test(message)) {
     return {
       kind: 'email-limit',
-      message: 'Chatter's shared email sender has reached its hourly limit. Password sign-in still works for existing confirmed accounts. Please use Sign in instead of creating another account; wait for the email quota to reset before requesting another message.',
+      message: "Chatter's shared email sender has reached its hourly limit. Password sign-in still works for existing confirmed accounts. Please use Sign in instead of creating another account; wait for the email quota to reset before requesting another message.",
     };
   }
   if (code === 'email_not_confirmed' || /email not confirmed/i.test(message)) {
