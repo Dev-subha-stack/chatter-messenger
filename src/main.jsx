@@ -8,6 +8,7 @@ import {
 } from 'lucide-react';
 import { isSupabaseConfigured, supabase } from './supabase';
 import { AppearanceDashboard, AdminDashboard, DEFAULT_APPEARANCE, APPEARANCE_ACCENTS } from './AppearanceAdmin';
+import { AuthScreen, PasswordRecoveryModal } from './AuthFlow';
 import './styles.css';
 
 const BRAND = 'Chatter';
@@ -57,106 +58,6 @@ function Avatar({ profile, size = 'md', className = '' }) {
   </div>;
 }
 
-function AuthScreen({ onDemo }) {
-  const [mode, setMode] = useState('login');
-  const [email, setEmail] = useState('');
-  const [password, setPassword] = useState('');
-  const [name, setName] = useState('');
-  const [busy, setBusy] = useState(false);
-  const [resending, setResending] = useState(false);
-  const [showPassword, setShowPassword] = useState(false);
-  const [error, setError] = useState('');
-  const [notice, setNotice] = useState('');
-
-  useEffect(() => {
-    const hashParams = new URLSearchParams(window.location.hash.replace(/^#/, ''));
-    const queryParams = new URLSearchParams(window.location.search);
-    const callbackError = hashParams.get('error_description') || queryParams.get('error_description');
-    if (callbackError) setError(callbackError.replace(/\+/g, ' '));
-  }, []);
-
-  const submit = async e => {
-    e.preventDefault(); setError(''); setNotice(''); setBusy(true);
-    try {
-      if (mode === 'signup') {
-        const username = (name.trim() || email.split('@')[0]).toLowerCase().replace(/[^a-z0-9_]/g, '').slice(0, 24);
-        const { data, error: err } = await supabase.auth.signUp({
-          email: email.trim(),
-          password,
-          options: {
-            emailRedirectTo: getAuthRedirectUrl(),
-            data: { display_name: name.trim() || email.split('@')[0], username }
-          }
-        });
-        if (err) throw err;
-        if (!data.session) setNotice('Account created. Open the confirmation link sent to your email. If it does not arrive, you can resend it below.');
-      } else {
-        const { error: err } = await supabase.auth.signInWithPassword({ email: email.trim(), password });
-        if (err) throw err;
-      }
-    } catch (e2) { setError(e2.message || 'Something went wrong.'); }
-    finally { setBusy(false); }
-  };
-
-  const resendConfirmation = async () => {
-    if (!email.trim()) { setError('Enter your email address first.'); return; }
-    setError(''); setNotice(''); setResending(true);
-    try {
-      const { error: err } = await supabase.auth.resend({
-        type: 'signup',
-        email: email.trim(),
-        options: { emailRedirectTo: getAuthRedirectUrl() }
-      });
-      if (err) throw err;
-      setNotice('A new confirmation email has been requested. Check your inbox and spam folder.');
-    } catch (e2) { setError(e2.message || 'Could not resend the confirmation email.'); }
-    finally { setResending(false); }
-  };
-
-  const signInWithGoogle = async () => {
-    setError(''); setNotice(''); setBusy(true);
-    try {
-      const { error: err } = await supabase.auth.signInWithOAuth({
-        provider: 'google',
-        options: {
-          redirectTo: getAuthRedirectUrl(),
-          queryParams: { prompt: 'select_account' }
-        }
-      });
-      if (err) throw err;
-    } catch (e2) {
-      const message = e2.message || 'Google sign-in could not be started.';
-      setError(/provider.*(disabled|not enabled)|unsupported provider/i.test(message)
-        ? 'Google sign-in is not enabled in Supabase yet. Enable the Google provider and add its OAuth client ID and secret.'
-        : message);
-      setBusy(false);
-    }
-  };
-
-  return <div className="auth-shell">
-    <div className="auth-backdrop glow-one"/><div className="auth-backdrop glow-two"/>
-    <div className="auth-card">
-      <div className="brand-mark"><MessageCircle size={23} fill="currentColor"/><span>chatter</span><i/></div>
-      <div className="auth-intro"><div className="eyebrow"><Sparkles size={13}/> YOUR SPACE, YOUR PEOPLE</div><h1>Good conversations<br/><em>start here.</em></h1><p>A quieter, more personal place to stay close.</p></div>
-      <div className="auth-tabs"><button className={mode === 'login' ? 'active' : ''} onClick={() => {setMode('login');setError('');setNotice('');}}>Sign in</button><button className={mode === 'signup' ? 'active' : ''} onClick={() => {setMode('signup');setError('');setNotice('');}}>Create account</button></div>
-      <form onSubmit={submit} className="auth-form">
-        {mode === 'signup' && <label>Your name<input value={name} onChange={e => setName(e.target.value)} placeholder="How should people know you?" maxLength={32} required/></label>}
-        <label>Email address<div className="input-icon"><Mail size={16}/><input type="email" value={email} onChange={e => setEmail(e.target.value)} placeholder="you@example.com" autoComplete="email" required/></div></label>
-        <label>Password<div className="input-icon password-input-wrap"><Lock size={16}/><input type={showPassword ? 'text' : 'password'} value={password} onChange={e => setPassword(e.target.value)} placeholder="At least 6 characters" minLength={6} autoComplete={mode === 'login' ? 'current-password' : 'new-password'} required/><button type="button" className="auth-password-toggle" onClick={() => setShowPassword(value => !value)} aria-label={showPassword ? 'Hide password' : 'Show password'} aria-pressed={showPassword} title={showPassword ? 'Hide password' : 'Show password'}>{showPassword ? <EyeOff size={16}/> : <Eye size={16}/>}</button></div></label>
-        {error && <div className="form-error">{error}</div>}
-        {notice && <div className="form-notice">{notice}{mode === 'signup' && <button type="button" className="auth-resend" onClick={resendConfirmation} disabled={resending}>{resending ? 'Requesting…' : 'Resend confirmation email'}</button>}</div>}
-        <button className="primary-button auth-submit" disabled={busy}>{busy ? 'Please wait…' : mode === 'login' ? 'Continue to Chatter' : 'Create your account'}<ArrowUp size={16}/></button>
-      </form>
-      <div className="auth-divider"><span>OR</span></div>
-      <button type="button" className="google-auth-button" onClick={signInWithGoogle} disabled={busy}>
-        <svg aria-hidden="true" viewBox="0 0 48 48" width="18" height="18"><path fill="#EA4335" d="M24 9.5c3.54 0 6.71 1.22 9.21 3.6l6.85-6.85C35.9 2.38 30.47 0 24 0 14.62 0 6.51 5.38 3.02 13.22l7.98 6.19C12.9 13.72 18 9.5 24 9.5z"/><path fill="#4285F4" d="M46.98 24.55c0-1.57-.15-3.09-.38-4.55H24v9.02h12.92c-.58 2.96-2.26 5.48-4.76 7.18l7.73 6C44.4 37.88 46.98 31.7 46.98 24.55z"/><path fill="#FBBC05" d="M10.99 28.59A14.4 14.4 0 0 1 10.23 24c0-1.59.27-3.13.76-4.59l-7.98-6.19A23.9 23.9 0 0 0 0 24c0 3.87.93 7.52 2.58 10.78l8.41-6.19z"/><path fill="#34A853" d="M24 48c6.48 0 11.93-2.13 15.9-5.8l-7.73-6c-2.14 1.45-4.88 2.3-8.17 2.3-6 0-11.1-4.22-12.92-9.91l-8.41 6.19C6.16 42.62 14.27 48 24 48z"/></svg>
-        Continue with Google
-      </button>
-      <div className="auth-foot"><ShieldCheck size={14}/> Your conversations are protected by your account permissions.</div>
-    </div>
-    <div className="auth-aside"><span>01 / PERSONAL</span><span>02 / REAL-TIME</span><span>03 / YOURS</span></div>
-  </div>;
-}
 function ProfileModal({ profile, onClose, onSave, onSignOut }) {
   const [displayName, setDisplayName] = useState(profile?.display_name || '');
   const [username, setUsername] = useState(profile?.username || '');
@@ -307,6 +208,7 @@ function CreateDashboard({ onNewChat }) { return <section className="simple-dash
 function App() {
   const [session, setSession] = useState(null);
   const [authLoading, setAuthLoading] = useState(true);
+  const [showPasswordRecovery, setShowPasswordRecovery] = useState(false);
   const [profile, setProfile] = useState(null);
   const [profiles, setProfiles] = useState({});
   const [conversations, setConversations] = useState([]);
@@ -354,9 +256,37 @@ function App() {
 
   useEffect(() => {
     if (!supabase) { setAuthLoading(false); return; }
-    supabase.auth.getSession().then(({ data }) => { setSession(data.session); setAuthLoading(false); });
-    const { data: listener } = supabase.auth.onAuthStateChange((_event, newSession) => { setSession(newSession); });
-    return () => listener.subscription.unsubscribe();
+    let mounted = true;
+    let authEventReceived = false;
+    const { data: listener } = supabase.auth.onAuthStateChange((event, newSession) => {
+      authEventReceived = true;
+      if (!mounted) return;
+      setSession(newSession);
+      if (event === 'PASSWORD_RECOVERY') setShowPasswordRecovery(true);
+    });
+    const restoreSession = async () => {
+      try {
+        const { data, error } = await supabase.auth.getSession();
+        if (error) throw error;
+        if (!mounted) return;
+        if (!authEventReceived) setSession(data?.session || null);
+        const hashParams = new URLSearchParams(window.location.hash.replace(/^#/, ''));
+        const queryParams = new URLSearchParams(window.location.search);
+        if (hashParams.get('type') === 'recovery' || queryParams.get('type') === 'recovery') {
+          setShowPasswordRecovery(true);
+        }
+      } catch (error) {
+        console.error('Could not restore the Chatter session:', error);
+        if (mounted && !authEventReceived) setSession(null);
+      } finally {
+        if (mounted) setAuthLoading(false);
+      }
+    };
+    restoreSession();
+    return () => {
+      mounted = false;
+      listener.subscription.unsubscribe();
+    };
   }, []);
 
   const loadProfile = useCallback(async user => {
@@ -573,6 +503,7 @@ function App() {
       </main></div>
     <nav className="mobile-bottom-nav">{tabs.map(t=><button key={t.id} className={activeTab===t.id?'active':''} onClick={()=>{setActiveTab(t.id);setMobileChatOpen(false);}}><t.icon size={20}/><span>{t.label}</span></button>)}</nav>
     {showProfile&&<ProfileModal profile={profile} onClose={()=>setShowProfile(false)} onSave={saveProfile} onSignOut={signOut}/>}
+    {showPasswordRecovery&&<PasswordRecoveryModal onClose={()=>setShowPasswordRecovery(false)} onNotify={notify}/>}
     {showNewChat&&<NewChatModal profiles={allProfiles} currentUserId={profile.id} onClose={()=>setShowNewChat(false)} onStart={startConversation}/>}
     {viewProfile&&<PublicProfileModal profile={viewProfile} onClose={()=>setViewProfile(null)}/>}
     {toast&&<div className="toast"><CheckCircle2 size={16}/>{toast}</div>}
