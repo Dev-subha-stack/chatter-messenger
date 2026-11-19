@@ -4,7 +4,7 @@ import {
   ArrowLeft, ArrowUp, Bell, Check, CheckCheck, ChevronDown, ChevronLeft, CircleHelp,
   ImagePlus, Info, LogOut, MessageCircle, MoreHorizontal, Paperclip, Pencil,
   Plus, Search, Send, Settings, Smile, Sparkles, User, UserPlus, X, Camera,
-  Menu, Moon, Sun, CheckCircle2, Lock, Mail, ShieldCheck, PanelLeftClose, Home, MessageSquare, PlusCircle, UserCircle, BellRing, ArrowRight, Image, FileText, Eye, EyeOff
+  Menu, Moon, Sun, CheckCircle2, Lock, Mail, ShieldCheck, Shield, Palette, PanelLeftClose, Home, MessageSquare, PlusCircle, UserCircle, BellRing, ArrowRight, Image, FileText, Eye, EyeOff
 } from 'lucide-react';
 import { isSupabaseConfigured, supabase } from './supabase';
 import { AppearanceDashboard, AdminDashboard, DEFAULT_APPEARANCE, APPEARANCE_ACCENTS } from './AppearanceAdmin';
