@@ -7,6 +7,7 @@ import {
   Menu, Moon, Sun, CheckCircle2, Lock, Mail, ShieldCheck, PanelLeftClose, Home, MessageSquare, PlusCircle, UserCircle, BellRing, ArrowRight, Image, FileText, Eye, EyeOff
 } from 'lucide-react';
 import { isSupabaseConfigured, supabase } from './supabase';
+import { AppearanceDashboard, AdminDashboard, DEFAULT_APPEARANCE, APPEARANCE_ACCENTS } from './AppearanceAdmin';
 import './styles.css';
 
 const BRAND = 'Chatter';
@@ -320,8 +321,34 @@ function App() {
   const [mobileChatOpen, setMobileChatOpen] = useState(false);
   const [toast, setToast] = useState('');
   const [activeTab, setActiveTab] = useState('home');
-  const [lightMode, setLightMode] = useState(() => localStorage.getItem('chatter-theme') === 'light');
-  useEffect(() => { localStorage.setItem('chatter-theme', lightMode ? 'light' : 'dark'); }, [lightMode]);
+  const [appearance, setAppearance] = useState(DEFAULT_APPEARANCE);
+  const [appearanceLoadedFor, setAppearanceLoadedFor] = useState('');
+  const [isAdmin, setIsAdmin] = useState(false);
+  const [onlineUsers, setOnlineUsers] = useState([]);
+  const [systemPrefersDark, setSystemPrefersDark] = useState(() => window.matchMedia?.('(prefers-color-scheme: dark)').matches ?? true);
+  useEffect(() => {
+    const userId = session?.user?.id;
+    if (!userId) { setAppearanceLoadedFor(''); return; }
+    let saved = {};
+    try { saved = JSON.parse(localStorage.getItem(`chatter-appearance:${userId}`) || '{}'); } catch {}
+    setAppearance({ ...DEFAULT_APPEARANCE, ...saved });
+    setAppearanceLoadedFor(userId);
+  }, [session?.user?.id]);
+  useEffect(() => {
+    const userId = session?.user?.id;
+    if (!userId || appearanceLoadedFor !== userId) return;
+    localStorage.setItem(`chatter-appearance:${userId}`, JSON.stringify(appearance));
+  }, [appearance, appearanceLoadedFor, session?.user?.id]);
+  useEffect(() => {
+    const media = window.matchMedia?.('(prefers-color-scheme: dark)');
+    if (!media) return;
+    const update = event => setSystemPrefersDark(event.matches);
+    setSystemPrefersDark(media.matches);
+    media.addEventListener?.('change', update);
+    return () => media.removeEventListener?.('change', update);
+  }, []);
+  const lightMode = appearance.theme === 'light' || (appearance.theme === 'system' && !systemPrefersDark);
+  const accent = APPEARANCE_ACCENTS[appearance.accent] || APPEARANCE_ACCENTS.mint;
 
   const notify = msg => { setToast(msg); window.clearTimeout(notify.timer); notify.timer = window.setTimeout(() => setToast(''), 3000); };
 
@@ -377,6 +404,46 @@ function App() {
     (async () => { try { const p = await loadProfile(session.user); if (!alive) return; await loadConversations(p.id); } catch (e) { console.error(e); notify(e.message || 'Could not load your account.'); } })();
     return () => { alive = false; };
   }, [session?.user?.id, loadProfile, loadConversations]);
+
+  useEffect(() => {
+    let cancelled = false;
+    if (!profile?.id || !supabase) { setIsAdmin(false); return; }
+    supabase.from('chatter_admins').select('user_id').eq('user_id', profile.id).maybeSingle()
+      .then(({ data, error }) => { if (!cancelled) setIsAdmin(!error && Boolean(data)); });
+    return () => { cancelled = true; };
+  }, [profile?.id]);
+
+  useEffect(() => {
+    if (!profile?.id || !supabase) { setOnlineUsers([]); return; }
+    const presenceKey = `${profile.id}:${window.crypto?.randomUUID?.() || Math.random().toString(36).slice(2)}`;
+    const channel = supabase.channel('chatter:online', { config: { presence: { key: presenceKey } } });
+    const syncOnlineUsers = () => {
+      const state = channel.presenceState();
+      const unique = new Map();
+      Object.values(state).flat().forEach(payload => {
+        if (payload?.user_id) unique.set(payload.user_id, payload);
+      });
+      setOnlineUsers([...unique.values()]);
+    };
+    channel.on('presence', { event: 'sync' }, syncOnlineUsers)
+      .on('presence', { event: 'join' }, syncOnlineUsers)
+      .on('presence', { event: 'leave' }, syncOnlineUsers)
+      .subscribe(async status => {
+        if (status === 'SUBSCRIBED') {
+          await channel.track({
+            user_id: profile.id,
+            display_name: profile.display_name,
+            username: profile.username,
+            online_at: new Date().toISOString(),
+          });
+          syncOnlineUsers();
+        }
+      });
+    return () => {
+      channel.untrack();
+      supabase.removeChannel(channel);
+    };
+  }, [profile?.id, profile?.display_name, profile?.username]);
 
   useEffect(() => {
     if (!profile?.id) return;
@@ -490,14 +557,18 @@ function App() {
 
   const openNewChat = async () => { const {data,error}=await supabase.from('profiles').select('*').order('display_name').limit(100); if(error) notify(error.message); else {setProfiles(prev=>({...prev,...Object.fromEntries((data||[]).map(p=>[p.id,p]))}));setShowNewChat(true);} };
   const openConversation = c => { setActive(c); setMobileChatOpen(true); setActiveTab('chats'); };
-  const tabs = [{id:'home',label:'Home',icon:Home},{id:'chats',label:'Chats',icon:MessageSquare},{id:'create',label:'Create',icon:PlusCircle},{id:'profile',label:'Profile',icon:UserCircle}];
-  return <div className={`chatter-app ${lightMode ? 'light-mode' : ''}`}>
-    <header className="app-topbar"><button className="topbar-brand" onClick={()=>{setActiveTab('home');setMobileChatOpen(false);}}><span className="brand-symbol"><MessageCircle size={17} fill="currentColor"/></span><b>chatter</b><i>YOUR SPACE</i></button><div className="topbar-search"><Search size={17}/><input value={search} onChange={e=>setSearch(e.target.value)} placeholder="Search conversations and people"/><kbd>⌘ K</kbd></div><div className="topbar-actions"><button className="icon-button" title="Notifications" onClick={()=>notify('You’re all caught up.')}><Bell size={18}/></button><button className="icon-button" title={lightMode?'Switch to dark mode':'Switch to light mode'} onClick={()=>setLightMode(v=>!v)}>{lightMode?<Moon size={18}/>:<Sun size={18}/>}</button><button className="topbar-profile" onClick={()=>setActiveTab('profile')}><Avatar profile={profile} size="sm"/></button></div></header>
+  const tabs = [{id:'home',label:'Home',icon:Home},{id:'chats',label:'Chats',icon:MessageSquare},{id:'create',label:'Create',icon:PlusCircle},{id:'appearance',label:'Appearance',icon:Palette},{id:'profile',label:'Profile',icon:UserCircle},...(isAdmin?[{id:'admin',label:'Admin',icon:Shield}]:[])];
+  return <div className={`chatter-app ${lightMode ? 'light-mode' : ''} ${appearance.motion==='off'?'no-motion':''}`}
+    data-density={appearance.density} data-wallpaper={appearance.wallpaper} data-bubble-style={appearance.bubbleStyle} data-font={appearance.font}
+    style={{'--mint':accent.primary,'--mint2':accent.strong,'--mint-dim':accent.dim}}>
+    <header className="app-topbar"><button className="topbar-brand" onClick={()=>{setActiveTab('home');setMobileChatOpen(false);}}><span className="brand-symbol"><MessageCircle size={17} fill="currentColor"/></span><b>chatter</b><i>YOUR SPACE</i></button><div className="topbar-search"><Search size={17}/><input value={search} onChange={e=>setSearch(e.target.value)} placeholder="Search conversations and people"/><kbd>⌘ K</kbd></div><div className="topbar-actions"><button className="icon-button" title="Notifications" onClick={()=>notify('You’re all caught up.')}><Bell size={18}/></button><button className="icon-button" title={lightMode?'Switch to dark mode':'Switch to light mode'} onClick={()=>setAppearance(v=>({...v,theme:lightMode?'dark':'light'}))}>{lightMode?<Moon size={18}/>:<Sun size={18}/>}</button><button className="topbar-profile" onClick={()=>setActiveTab('profile')}><Avatar profile={profile} size="sm"/></button></div></header>
     <div className="app-content"><nav className="desktop-nav">{tabs.map(t=><button key={t.id} className={activeTab===t.id?'active':''} onClick={()=>{setActiveTab(t.id);setMobileChatOpen(false);}}><t.icon size={18}/><span>{t.label}</span>{t.id==='chats'&&conversations.some(c=>c.unread_count>0)&&<i/>}</button>)}<div className="desktop-nav-foot"><ShieldCheck size={15}/><span>Private by design</span></div></nav>
       <main className="app-main">
         {activeTab==='home'&&<HomeDashboard profile={profile} conversations={conversations} profiles={profiles} onOpenChats={()=>setActiveTab('chats')} onNewChat={openNewChat} onEditProfile={()=>setActiveTab('profile')} onCreate={()=>setActiveTab('create')}/>}
         {activeTab==='chats'&&<div className={`chat-workspace ${mobileChatOpen?'mobile-open':''}`}><ChatList conversations={conversations} activeId={active?.id} onSelect={openConversation} profiles={profiles} currentProfile={profile} onNewChat={openNewChat} onEditProfile={()=>setActiveTab('profile')} search={search} setSearch={setSearch} loading={loadingChats}/><div className={`main-stage ${mobileChatOpen?'mobile-open':''}`}><ChatPanel conversation={active} other={activeOther} currentProfile={profile} messages={messages} onSend={sendMessage} onSendFile={sendAttachment} loading={loadingMessages} isMobile={mobileChatOpen} onBack={()=>setMobileChatOpen(false)} onOpenProfile={()=>activeOther&&setViewProfile(activeOther)}/></div></div>}
         {activeTab==='create'&&<CreateDashboard onNewChat={openNewChat}/>}
+        {activeTab==='appearance'&&<AppearanceDashboard appearance={appearance} onChange={setAppearance} onReset={()=>{setAppearance(DEFAULT_APPEARANCE);notify('Appearance reset for this browser.');}}/>}
+        {activeTab==='admin'&&isAdmin&&<AdminDashboard onlineUsers={onlineUsers} currentUserId={profile?.id} onNotify={notify}/>}
         {activeTab==='profile'&&<section className="profile-dashboard"><span className="eyebrow">YOUR ACCOUNT</span><h1>Your <em>profile.</em></h1><div className="profile-dashboard-card"><div className="profile-dashboard-banner" style={profile?.banner_url?{backgroundImage:`url(${profile.banner_url})`}:{}}/><div className="profile-dashboard-info"><Avatar profile={profile} size="xl"/><div><h2>{profile?.display_name}</h2><span style={{color:profile?.username_color || '#A3E6D3'}}>@{profile?.username}</span><p>{profile?.bio||'Add a little about yourself.'}</p></div><button className="primary-button" onClick={()=>setShowProfile(true)}><Settings size={15}/> Edit profile</button></div></div><button className="profile-signout" onClick={signOut}><LogOut size={16}/> Sign out</button></section>}
       </main></div>
     <nav className="mobile-bottom-nav">{tabs.map(t=><button key={t.id} className={activeTab===t.id?'active':''} onClick={()=>{setActiveTab(t.id);setMobileChatOpen(false);}}><t.icon size={20}/><span>{t.label}</span></button>)}</nav>
