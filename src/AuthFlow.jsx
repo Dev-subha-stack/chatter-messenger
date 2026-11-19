@@ -18,7 +18,7 @@ function getFriendlyAuthError(error, mode) {
   if (code === 'over_email_send_rate_limit' || /email rate limit exceeded/i.test(message)) {
     return {
       kind: 'email-limit',
-      message: 'Chatter has reached its current email-sending limit. Password sign-in still works for existing confirmed accounts. Please use Sign in instead of creating another account, and try email confirmation again later.',
+      message: 'Chatter's shared email sender has reached its hourly limit. Password sign-in still works for existing confirmed accounts. Please use Sign in instead of creating another account; wait for the email quota to reset before requesting another message.',
     };
   }
   if (code === 'email_not_confirmed' || /email not confirmed/i.test(message)) {
@@ -171,7 +171,7 @@ export function AuthScreen() {
       const friendly = getFriendlyAuthError(caught, mode);
       setError(friendly.message);
       if (friendly.kind === 'unconfirmed') setEmailNotConfirmed(true);
-      if (friendly.kind === 'email-limit') startEmailCooldown(15 * 60);
+      if (friendly.kind === 'email-limit') { startEmailCooldown(60 * 60); if (mode === 'signup') setEmailNotConfirmed(true); }
       if (friendly.kind === 'request-limit') startEmailCooldown(60);
       if (friendly.kind === 'expired-link') setEmailNotConfirmed(mode === 'signup');
     } finally {
@@ -201,7 +201,7 @@ export function AuthScreen() {
     } catch (caught) {
       const friendly = getFriendlyAuthError(caught, 'signup');
       setError(friendly.message);
-      if (friendly.kind === 'email-limit') startEmailCooldown(15 * 60);
+      if (friendly.kind === 'email-limit') { startEmailCooldown(60 * 60); setEmailNotConfirmed(true); }
       else if (friendly.kind === 'request-limit') startEmailCooldown(60);
     } finally {
       setResending(false);
