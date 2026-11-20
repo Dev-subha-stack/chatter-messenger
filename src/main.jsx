@@ -4,7 +4,7 @@ import {
   ArrowLeft, ArrowUp, Bell, Check, CheckCheck, ChevronDown, ChevronLeft, CircleHelp,
   ImagePlus, Info, LogOut, MessageCircle, MoreHorizontal, Paperclip, Pencil,
   Plus, Search, Send, Settings, Smile, Sparkles, User, UserPlus, X, Camera,
-  Menu, Moon, Sun, CheckCircle2, Lock, Mail, ShieldCheck, Shield, Palette, PanelLeftClose, Home, MessageSquare, PlusCircle, UserCircle, BellRing, ArrowRight, Image, FileText, Eye, EyeOff, Newspaper, Play, CornerDownRight
+  Menu, Moon, Sun, CheckCircle2, Lock, Mail, ShieldCheck, Shield, Palette, PanelLeftClose, Home, MessageSquare, PlusCircle, UserCircle, BellRing, ArrowRight, Image, FileText, Eye, EyeOff, Newspaper, Play, Pause, Volume2, VolumeX, Maximize2, CornerDownRight, Trash2
 } from 'lucide-react';
 import { isSupabaseConfigured, supabase } from './supabase';
 import { AppearanceDashboard, AdminDashboard, DEFAULT_APPEARANCE, APPEARANCE_ACCENTS } from './AppearanceAdmin';
@@ -138,16 +138,42 @@ function ChatList({ conversations, activeId, onSelect, profiles, currentProfile,
   </aside>;
 }
 
-function MessageBubble({ message, mine, onOpenMedia, onReply, replyMessage }) {
+function MessageBubble({ message, mine, onOpenMedia, onReply, replyMessage, currentProfile, other, onEdit, onDelete }) {
   const isImage = message.attachment_type?.startsWith('image/');
   const isVideo = message.attachment_type?.startsWith('video/');
-  return <div className={`message-line ${mine ? 'mine' : 'theirs'}`}><div className={`message-bubble ${mine ? 'bubble-mine' : 'bubble-theirs'}`}>
-    {replyMessage && <div className="message-reply-preview"><small>Replying to {replyMessage.sender_id === message.sender_id ? 'your message' : 'a message'}</small><span>{replyMessage.content || replyMessage.attachment_name || 'Attachment'}</span></div>}
-    {message.deleted_at ? <span className="deleted-message">This message was deleted</span> : <>{message.attachment_url && (isImage ? <button type="button" className="message-attachment-image media-open-button" onClick={() => onOpenMedia?.({src:message.attachment_url,type:'image',name:message.attachment_name})}><img src={message.attachment_url} alt={message.attachment_name || 'Shared image'}/></button> : isVideo ? <button type="button" className="message-video-open media-open-button" onClick={() => onOpenMedia?.({src:message.attachment_url,type:'video',name:message.attachment_name})}><video className="message-attachment-video" src={message.attachment_url} muted playsInline preload="metadata"/><span className="media-play-mark">▶</span></button> : <a className="message-attachment-file" href={message.attachment_url} target="_blank" rel="noreferrer"><FileText size={18}/><span>{message.attachment_name || 'Download file'}</span><ArrowUp size={13}/></a>)}{message.content && (!message.attachment_url || message.content !== message.attachment_name) && <span>{renderMentions(message.content)}</span>}</>}
-    <div className="message-meta"><time>{timeLabel(message.created_at)}</time>{mine && <CheckCheck size={14} className="read-tick"/>}<button type="button" className="message-reply-action" onClick={onReply} title="Reply to message"><CornerDownRight size={13}/></button></div>
+  const [editing,setEditing] = useState(false);
+  const [draft,setDraft] = useState(message.content || '');
+  const [menuOpen,setMenuOpen] = useState(false);
+  const quote = replyMessage || (message.reply_to_message_id ? {sender_id:message.reply_to_sender_id,content:message.reply_to_content} : null);
+  const saveEdit = async () => {
+    const next = draft.trim();
+    if (!next || next === message.content) { setEditing(false); return; }
+    try { await onEdit?.(message.id,next); setEditing(false); }
+    catch (error) { window.alert(error?.message || 'Could not edit this message.'); }
+  };
+  const deleteThis = async () => {
+    setMenuOpen(false);
+    if (!window.confirm('Delete this message for everyone in this chat?')) return;
+    try { await onDelete?.(message.id); }
+    catch (error) { window.alert(error?.message || 'Could not delete this message.'); }
+  };
+  return <div className={\`message-line \${mine ? 'mine' : 'theirs'}\`}><div className={\`message-bubble \${mine ? 'bubble-mine' : 'bubble-theirs'}\`}>
+    {quote && <div className="message-reply-preview"><small>Replying to {(quote.sender_id || message.reply_to_sender_id) === currentProfile?.id ? 'You' : (other?.display_name || 'message')}</small><span>{quote.deleted_at ? 'This message was deleted' : (quote.content || message.reply_to_content || quote.attachment_name || 'Original message')}</span></div>}
+    {message.deleted_at ? <span className="deleted-message">This message was deleted</span> : <>
+      {message.attachment_url && (isImage
+        ? <button type="button" className="message-attachment-image media-open-button" onClick={() => onOpenMedia?.({src:message.attachment_url,type:'image',name:message.attachment_name})}><img src={message.attachment_url} alt={message.attachment_name || 'Shared image'}/></button>
+        : isVideo
+          ? <button type="button" className="message-video-open media-open-button" onClick={() => onOpenMedia?.({src:message.attachment_url,type:'video',name:message.attachment_name})}><video className="message-attachment-video" src={message.attachment_url} muted playsInline preload="metadata"/><span className="media-play-mark">▶</span></button>
+          : <a className="message-attachment-file" href={message.attachment_url} target="_blank" rel="noreferrer"><FileText size={18}/><span>{message.attachment_name || 'Download file'}</span><ArrowUp size={13}/></a>)}
+      {editing
+        ? <div className="message-edit-box"><textarea value={draft} onChange={event => setDraft(event.target.value)} maxLength={4000} rows={Math.min(5,Math.max(2,draft.split(String.fromCharCode(10)).length))}/><div><button type="button" onClick={() => {setEditing(false);setDraft(message.content || '')}}>Cancel</button><button type="button" onClick={saveEdit} disabled={!draft.trim()}>Save</button></div></div>
+        : message.content && (!message.attachment_url || message.content !== message.attachment_name) && <span>{renderMentions(message.content)}</span>}
+    </>}
+    <div className="message-meta"><time>{timeLabel(message.created_at)}{message.edited_at && !message.deleted_at ? ' · edited' : ''}</time>{mine && <CheckCheck size={14} className="read-tick"/>}<button type="button" className="message-reply-action" onClick={onReply} title="Reply to message"><CornerDownRight size={13}/></button>{mine && !message.deleted_at && !editing && <div className="message-actions-wrap"><button type="button" className="message-reply-action" title="Message options" onClick={() => setMenuOpen(value => !value)}><MoreHorizontal size={15}/></button>{menuOpen && <div className="message-actions-menu"><button type="button" onClick={() => {setDraft(message.content || '');setEditing(true);setMenuOpen(false)}}><Pencil size={13}/> Edit</button><button type="button" className="danger" onClick={deleteThis}><Trash2 size={13}/> Delete</button></div>}</div>}</div>
   </div></div>;
 }
-function ChatPanel({ conversation, other, currentProfile, messages, onSend, onSendFile, loading, isMobile, onBack, onOpenProfile, onOpenMedia, onlineUserIds, wallpaper, onSaveWallpaper, profiles, customEmojis }) {
+
+function ChatPanel({ conversation, other, currentProfile, messages, onSend, onSendFile, onEditMessage, onDeleteMessage, loading, isMobile, onBack, onOpenProfile, onOpenMedia, onlineUserIds, wallpaper, onSaveWallpaper, profiles, customEmojis }) {
   const [draft, setDraft] = useState('');
   const [sending, setSending] = useState(false);
   const [showDetails, setShowDetails] = useState(false);
@@ -158,65 +184,113 @@ function ChatPanel({ conversation, other, currentProfile, messages, onSend, onSe
   const [compression, setCompression] = useState(null);
   const [replyTo, setReplyTo] = useState(null);
   const [emojiOpen, setEmojiOpen] = useState(false);
+  const [otherTyping,setOtherTyping] = useState(false);
   const fileInputRef = useRef(null);
   const endRef = useRef(null); const inputRef = useRef(null);
+  const typingChannelRef = useRef(null), typingTimerRef = useRef(null), typingOffRef = useRef(null), lastTypingAtRef = useRef(0);
   useEffect(() => { endRef.current?.scrollIntoView({ behavior: 'smooth' }); }, [messages, conversation?.id]);
   useEffect(() => { if(filePreview) URL.revokeObjectURL(filePreview); setDraft(''); setShowDetails(false); setShowWallpaper(false); setSelectedFile(null); setFilePreview(''); setCompression(null); setReplyTo(null); setEmojiOpen(false); }, [conversation?.id]);
   useEffect(() => { if (conversation?.id) inputRef.current?.focus(); }, [conversation?.id]);
+  useEffect(() => {
+    if (!conversation?.id || !currentProfile?.id) return;
+    let alive = true;
+    const channel = supabase.channel('typing:' + conversation.id,{config:{broadcast:{self:false}}});
+    typingChannelRef.current = channel;
+    const clearTyping = () => { setOtherTyping(false); if (typingOffRef.current) window.clearTimeout(typingOffRef.current); };
+    channel.on('broadcast',{event:'typing'},({payload}) => {
+      if (!alive || payload?.user_id === currentProfile.id) return;
+      setOtherTyping(Boolean(payload?.typing));
+      if (typingOffRef.current) window.clearTimeout(typingOffRef.current);
+      if (payload?.typing) typingOffRef.current = window.setTimeout(clearTyping,2400);
+    }).subscribe();
+    return () => {
+      alive = false;
+      if (typingTimerRef.current) window.clearTimeout(typingTimerRef.current);
+      if (typingOffRef.current) window.clearTimeout(typingOffRef.current);
+      channel.send({type:'broadcast',event:'typing',payload:{user_id:currentProfile.id,typing:false}}).catch(()=>{});
+      typingChannelRef.current = null;
+      supabase.removeChannel(channel);
+      setOtherTyping(false);
+    };
+  },[conversation?.id,currentProfile?.id]);
+  const updateDraft = value => {
+    setDraft(value);
+    const channel = typingChannelRef.current;
+    if (!channel || !currentProfile?.id) return;
+    if (!value.trim()) { channel.send({type:'broadcast',event:'typing',payload:{user_id:currentProfile.id,typing:false}}).catch(()=>{}); return; }
+    if (Date.now() - lastTypingAtRef.current > 800) {
+      lastTypingAtRef.current = Date.now();
+      channel.send({type:'broadcast',event:'typing',payload:{user_id:currentProfile.id,typing:true}}).catch(()=>{});
+    }
+    if (typingTimerRef.current) window.clearTimeout(typingTimerRef.current);
+    typingTimerRef.current = window.setTimeout(() => channel.send({type:'broadcast',event:'typing',payload:{user_id:currentProfile.id,typing:false}}).catch(()=>{}),1800);
+  };
   const mentionMatch = draft.match(/@([a-z0-9_]*)$/i);
-  const mentionCandidates = mentionMatch ? Object.values(profiles || {}).filter(person => person.id !== currentProfile?.id && String(person.username || '').toLowerCase().startsWith(mentionMatch[1].toLowerCase())).slice(0, 5) : [];
-  const chooseMention = person => setDraft(value => value.replace(/@([a-z0-9_]*)$/i, `@${person.username} `));
+  const mentionCandidates = mentionMatch ? Object.values(profiles || {}).filter(person => person.id !== currentProfile?.id && String(person.username || '').toLowerCase().startsWith(mentionMatch[1].toLowerCase())).slice(0,5) : [];
+  const chooseMention = person => setDraft(value => value.replace(/@([a-z0-9_]*)$/i, \`@\${person.username} \`));
   const chooseFile = async file => {
     if (!file) return;
     if (filePreview) URL.revokeObjectURL(filePreview);
     setSelectedFile(null); setFilePreview('');
-    setCompression({ phase: 'compressing', progress: 1, message: 'Preparing your attachment…', originalSize: file.size, outputSize: file.size });
+    setCompression({ phase:'compressing',progress:1,message:'Preparing your attachment…',originalSize:file.size,outputSize:file.size });
     let chosen = file;
     const autoCompress = localStorage.getItem('chatter-compress-media') !== 'false';
     if (autoCompress && (file.type.startsWith('image/') || file.type.startsWith('video/'))) {
       try {
-        const result = await compressMediaFile(file, {
-          maxDimension: 1280, quality: .8, targetBytes: 4.5 * 1024 * 1024,
-          videoBitsPerSecond: 1100000, fps: 24, maxVideoSeconds: 240,
-          onProgress: setCompression,
-        });
+        const result = await compressMediaFile(file,{maxDimension:1280,quality:.8,targetBytes:4.5*1024*1024,videoBitsPerSecond:1100000,fps:24,maxVideoSeconds:240,onProgress:setCompression});
         chosen = result.file;
       } catch (caught) {
-        setCompression({ phase: 'error', progress: 100, message: caught?.message || 'Could not compress this attachment.' });
+        setCompression({phase:'error',progress:100,message:caught?.message || 'Could not compress this attachment.'});
         return;
       }
     } else {
-      setCompression({ phase: 'done', progress: 100, message: autoCompress ? 'This file type cannot be recompressed safely. The original file will be used.' : 'Compression is turned off. The original file will be used.', originalSize: file.size, outputSize: file.size });
+      setCompression({phase:'done',progress:100,message:autoCompress?'This file type cannot be recompressed safely. The original file will be used.':'Compression is turned off. The original file will be used.',originalSize:file.size,outputSize:file.size});
     }
-    if (chosen.size > 5 * 1024 * 1024) {
-      setCompression({ phase: 'error', progress: 100, message: `After compression this file is still ${formatMediaBytes(chosen.size)}. Chat attachments have a 5 MB limit. Try a shorter video or smaller image.`, originalSize: file.size, outputSize: chosen.size });
+    if (chosen.size > 5*1024*1024) {
+      setCompression({phase:'error',progress:100,message:\`After compression this file is still \${formatMediaBytes(chosen.size)}. Chat attachments have a 5 MB limit. Try a shorter video or smaller image.\`,originalSize:file.size,outputSize:chosen.size});
       return;
     }
     setSelectedFile(chosen);
     setFilePreview(chosen.type.startsWith('image/') || chosen.type.startsWith('video/') ? URL.createObjectURL(chosen) : '');
   };
-  const submit = async e => { e.preventDefault(); const value = draft.trim(); if ((!value && !selectedFile) || sending || uploading || compression?.phase === 'compressing') return; setSending(true); try { if(selectedFile){setUploading(true);await onSendFile(selectedFile,value);if(filePreview)URL.revokeObjectURL(filePreview);setSelectedFile(null);setFilePreview('');setCompression(null);} else await onSend(value, replyTo?.id || null); setDraft(''); setReplyTo(null); } catch (e) { window.alert(e.message || 'Message could not be sent.'); } finally { setSending(false);setUploading(false); inputRef.current?.focus(); } };
+  const submit = async event => {
+    event.preventDefault();
+    const value = draft.trim();
+    if ((!value && !selectedFile) || sending || uploading || compression?.phase === 'compressing') return;
+    setSending(true);
+    try {
+      if (selectedFile) {
+        setUploading(true);
+        await onSendFile(selectedFile,value,replyTo?.id || null,replyTo || null);
+        if (filePreview) URL.revokeObjectURL(filePreview);
+        setSelectedFile(null);setFilePreview('');setCompression(null);
+      } else await onSend(value,replyTo?.id || null,replyTo || null);
+      setDraft('');setReplyTo(null);updateDraft('');
+    } catch (error) { window.alert(error.message || 'Message could not be sent.'); }
+    finally { setSending(false);setUploading(false);inputRef.current?.focus(); }
+  };
   if (!conversation) return <main className="chat-placeholder"><div className="placeholder-art"><div className="art-orbit orbit-a"/><div className="art-orbit orbit-b"/><div className="art-core"><MessageCircle size={35} fill="currentColor"/></div><span className="art-spark spark-a">✳</span><span className="art-spark spark-b">✦</span></div><div className="placeholder-copy"><span className="eyebrow">A LITTLE CLOSER</span><h2>Every good story<br/>starts with <em>hello.</em></h2><p>Choose a conversation or find someone new to talk to.</p></div><div className="placeholder-footer"><Lock size={13}/> Your messages stay between you and the people you chat with.</div></main>;
   return <main className="chat-panel">
-    <header className="chat-header"><div className="chat-header-person"><button className="icon-button mobile-back" onClick={onBack}><ArrowLeft size={19}/></button><button className="header-avatar-button" onClick={onOpenProfile}><Avatar profile={other} size="md"/></button><button className="header-person-copy" onClick={onOpenProfile}><strong>{other?.display_name || 'Chatter user'}</strong><small><i className={onlineUserIds?.has(other?.id) ? 'online-dot' : 'offline-dot'}/> <span className={onlineUserIds?.has(other?.id) ? 'status-online' : 'status-offline'}>{onlineUserIds?.has(other?.id) ? 'Online' : 'Offline'}</span><span>·</span><span style={{color:other?.username_color || '#A3E6D3'}}>@{other?.username || 'member'}</span></small></button></div><div className="chat-header-actions"><span className="header-divider"/><button className="icon-button" onClick={() => setShowWallpaper(true)} title="Chat wallpaper"><Image size={18}/></button><button className="icon-button" onClick={() => setShowDetails(v => !v)} title="Conversation details"><Info size={18}/></button></div></header>
-    <div className="chat-body" data-wallpaper={wallpaper?.theme || 'default'} style={wallpaper?.url ? {backgroundImage:`linear-gradient(rgba(5,12,15,.38),rgba(5,12,15,.38)),url("${wallpaper.url}")`,backgroundSize:'cover',backgroundPosition:'center'} : undefined} onClick={() => showDetails && setShowDetails(false)}>
+    <header className="chat-header"><div className="chat-header-person"><button className="icon-button mobile-back" onClick={onBack}><ArrowLeft size={19}/></button><button className="header-avatar-button" onClick={onOpenProfile}><Avatar profile={other} size="md"/></button><button className="header-person-copy" onClick={onOpenProfile}><strong>{other?.display_name || 'Chatter user'}</strong><small><i className={otherTyping || onlineUserIds?.has(other?.id) ? 'online-dot' : 'offline-dot'}/> <span className={otherTyping || onlineUserIds?.has(other?.id) ? 'status-online' : 'status-offline'}>{otherTyping ? 'typing…' : (onlineUserIds?.has(other?.id) ? 'Online' : 'Offline')}</span>{!otherTyping && <><span>·</span><span style={{color:other?.username_color || '#A3E6D3'}}>@{other?.username || 'member'}</span></>}</small></button></div><div className="chat-header-actions"><span className="header-divider"/><button className="icon-button" onClick={() => setShowWallpaper(true)} title="Chat wallpaper"><Image size={18}/></button><button className="icon-button" onClick={() => setShowDetails(v => !v)} title="Conversation details"><Info size={18}/></button></div></header>
+    <div className="chat-body" data-wallpaper={wallpaper?.theme || 'default'} style={wallpaper?.url ? {backgroundImage:\`linear-gradient(rgba(5,12,15,.38),rgba(5,12,15,.38)),url("\${wallpaper.url}")\`,backgroundSize:'cover',backgroundPosition:'center'} : undefined} onClick={() => showDetails && setShowDetails(false)}>
       <div className="day-divider"><span>YOUR CONVERSATION</span></div>
-      {loading ? <div className="messages-loading">Loading messages…</div> : <>{!messages.length && <div className="start-card"><div className="start-avatar"><Avatar profile={other} size="xl"/></div><strong>{other?.display_name || 'Chatter user'}</strong><span>@{other?.username || 'member'}</span>{other?.bio && <p>{other.bio}</p>}<small>This is the beginning of your conversation.</small><button className="text-button" onClick={onOpenProfile}>View profile <ArrowUp size={13}/></button></div>}{messages.map(m => <MessageBubble key={m.id} message={m} mine={m.sender_id === currentProfile?.id} onOpenMedia={onOpenMedia} onReply={() => setReplyTo(m)} replyMessage={messages.find(row => row.id === m.reply_to_message_id)}/>)}</>}
+      {loading ? <div className="messages-loading">Loading messages…</div> : <>{!messages.length && <div className="start-card"><div className="start-avatar"><Avatar profile={other} size="xl"/></div><strong>{other?.display_name || 'Chatter user'}</strong><span>@{other?.username || 'member'}</span>{other?.bio && <p>{other.bio}</p>}<small>This is the beginning of your conversation.</small><button className="text-button" onClick={onOpenProfile}>View profile <ArrowUp size={13}/></button></div>}{messages.map(message => <MessageBubble key={message.id} message={message} mine={message.sender_id === currentProfile?.id} currentProfile={currentProfile} other={other} onEdit={onEditMessage} onDelete={onDeleteMessage} onOpenMedia={onOpenMedia} onReply={() => setReplyTo(message)} replyMessage={messages.find(row => row.id === message.reply_to_message_id)}/>)}</>}
       <div ref={endRef}/>
     </div>
     <form className="composer" onSubmit={submit}>
       {selectedFile && <div className="attachment-preview">{filePreview && selectedFile.type.startsWith('image/') ? <img src={filePreview} alt="Preview"/> : filePreview && selectedFile.type.startsWith('video/') ? <video src={filePreview} muted playsInline/> : <FileText size={19}/>}<span><b>{selectedFile.name}</b><small>{formatMediaBytes(selectedFile.size)} · Ready to send</small></span><button type="button" className="icon-button" onClick={()=>{if(filePreview)URL.revokeObjectURL(filePreview);setSelectedFile(null);setFilePreview('');setCompression(null);}}><X size={16}/></button></div>}
       <CompressionStatus status={compression}/>
-      {replyTo && <div className="replying-strip"><span>Replying to {replyTo.sender_id === currentProfile?.id ? 'your message' : (other?.display_name || 'this person')}: {replyTo.content || replyTo.attachment_name || 'Attachment'}</span><button type="button" onClick={() => setReplyTo(null)}><X size={14}/></button></div>}
+      {replyTo && <div className="replying-strip"><span>Replying to {replyTo.sender_id === currentProfile?.id ? 'your message' : (other?.display_name || 'this person')}: {replyTo.deleted_at ? 'This message was deleted' : (replyTo.content || replyTo.attachment_name || 'Attachment')}</span><button type="button" onClick={() => setReplyTo(null)}><X size={14}/></button></div>}
       {mentionCandidates.length > 0 && <div className="mention-suggestions">{mentionCandidates.map(person => <button type="button" key={person.id} onClick={() => chooseMention(person)}>@{person.username}<small>{person.display_name}</small></button>)}</div>}
       {emojiOpen && <div className="chat-emoji-picker">{['😀','😂','🥹','❤️','🔥','🎉','👍','✨','😎','😭','🙏','💀'].map(emoji => <button type="button" key={emoji} onClick={() => setDraft(value => value + emoji)}>{emoji}</button>)}{(customEmojis || []).map(item => <button type="button" key={item.id} title={item.shortcode} onClick={() => setDraft(value => value + item.emoji)}>{item.emoji}</button>)}</div>}
       {uploading && <div className="upload-progress"><i/></div>}
       <input ref={fileInputRef} type="file" hidden accept="image/*,video/mp4,video/webm,video/quicktime,image/gif,application/pdf,text/plain" onChange={e=>{chooseFile(e.target.files?.[0]);e.target.value='';}}/>
-      <div className="composer-inner"><button type="button" className="composer-tool" title="Attach media (5 MB max)" onClick={()=>fileInputRef.current?.click()} disabled={compression?.phase==='compressing'||uploading}><Paperclip size={19}/></button><textarea ref={inputRef} value={draft} onChange={e => setDraft(e.target.value)} onKeyDown={e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); submit(e); } }} rows={1} placeholder={`Message ${other?.display_name || 'your friend'}…`} maxLength={4000}/><button type="button" className="composer-tool emoji-tool" title="Emoji" onClick={() => setEmojiOpen(value => !value)}><Smile size={19}/></button><button className="send-button" disabled={(!draft.trim()&&!selectedFile) || sending} title="Send message"><Send size={16}/></button></div><div className="composer-hint"><span>Up to 5 MB · Images, videos, GIFs, PDF, TXT</span><span>{draft.length}/4000</span></div></form>
-    {showDetails && <div className="details-popover"><div className="details-banner" style={other?.banner_url ? {backgroundImage:`url(${other.banner_url})`} : {}}/><Avatar profile={other} size="xl"/><h3>{other?.display_name}</h3><span style={{color:other?.username_color || '#A3E6D3'}}>@{other?.username}</span><p>{other?.bio || 'No bio yet.'}</p><button className="text-button" onClick={() => {setShowDetails(false);onOpenProfile();}}>View profile <ArrowUp size={13}/></button></div>}
+      <div className="composer-inner"><button type="button" className="composer-tool" title="Attach media (5 MB max)" onClick={()=>fileInputRef.current?.click()} disabled={compression?.phase==='compressing'||uploading}><Paperclip size={19}/></button><textarea ref={inputRef} value={draft} onChange={e => updateDraft(e.target.value)} onKeyDown={e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); submit(e); } }} rows={1} placeholder={\`Message \${other?.display_name || 'your friend'}…\`} maxLength={4000}/><button type="button" className="composer-tool emoji-tool" title="Emoji" onClick={() => setEmojiOpen(value => !value)}><Smile size={19}/></button><button className="send-button" disabled={(!draft.trim()&&!selectedFile) || sending} title="Send message"><Send size={16}/></button></div><div className="composer-hint"><span>Up to 5 MB · Images, videos, GIFs, PDF, TXT</span><span>{draft.length}/4000</span></div></form>
+    {showDetails && <div className="details-popover"><div className="details-banner" style={other?.banner_url ? {backgroundImage:\`url(\${other.banner_url})\`} : {}}/><Avatar profile={other} size="xl"/><h3>{other?.display_name}</h3><span style={{color:other?.username_color || '#A3E6D3'}}>@{other?.username}</span><p>{other?.bio || 'No bio yet.'}</p><button className="text-button" onClick={() => {setShowDetails(false);onOpenProfile();}}>View profile <ArrowUp size={13}/></button></div>}
     {showWallpaper && <ChatWallpaperModal wallpaper={wallpaper} onClose={() => setShowWallpaper(false)} onSave={async (value,onProgress) => { await onSaveWallpaper(value,onProgress); setShowWallpaper(false); }}/>}
   </main>;
 }
+
 
 function PublicProfileModal({ profile, onClose, isOnline }) {
   return <div className="modal-scrim" onMouseDown={e => e.target === e.currentTarget && onClose()}><div className="public-profile-modal"><button className="icon-button public-close" onClick={onClose}><X size={18}/></button><div className="public-banner" style={profile?.banner_url ? {backgroundImage:`url(${profile.banner_url})`} : {}}/><div className="public-profile-content"><Avatar profile={profile} size="xl"/><h2>{profile?.display_name}</h2><span style={{color:profile?.username_color || '#A3E6D3'}}>@{profile?.username}</span><span className={isOnline?'profile-presence status-online':'profile-presence status-offline'}><i className={isOnline?'online-dot':'offline-dot'}/>{isOnline?'Online':'Offline'}</span><p>{profile?.bio || 'A Chatter member.'}</p></div></div></div>;
@@ -717,9 +791,9 @@ function App() {
     } catch (e) { notify(e.message || 'Could not start conversation.'); }
   };
 
-  const sendMessage = async (content, replyToId = null) => {
+  const sendMessage = async (content, replyToId = null, replyTo = null) => {
     const mentions = getMentionIds(content, profiles, profile.id);
-    const { data, error } = await supabase.from('messages').insert({ conversation_id:active.id, sender_id:profile.id, content, reply_to_message_id: replyToId, mentions }).select().single();
+    const { data, error } = await supabase.from('messages').insert({ conversation_id:active.id, sender_id:profile.id, content, reply_to_message_id: replyToId, reply_to_sender_id: replyTo?.sender_id || null, reply_to_content: replyTo?.content || replyTo?.attachment_name || null, mentions }).select().single();
     if (error) throw error;
     if (mentions.length) {
       const { error: pingError } = await supabase.from('chatter_notifications').insert(mentions.map(recipient_user_id => ({
@@ -728,6 +802,13 @@ function App() {
         body: `You were mentioned in a message by ${profile.display_name || 'a Chatter member'}.`,
       })));
       if (pingError) console.warn('Message mention notifications were not delivered:', pingError.message);
+    }
+    if (active?.other_id && active.other_id !== profile.id) {
+      const { error: noticeError } = await supabase.from('chatter_notifications').insert({
+        recipient_user_id: active.other_id, actor_user_id: profile.id, notification_type: 'new_message',
+        target_type: 'conversation', target_id: active.id, body: 'Sent you a message: ' + String(content || '').slice(0,100),
+      });
+      if (noticeError) console.warn('Message notification could not be saved:', noticeError.message);
     }
     setMessages(current => current.some(m => m.id === data.id) ? current : [...current, data]);
     loadConversations(profile.id, false);
@@ -768,7 +849,7 @@ function App() {
     notify('Your post is live.');
   };
 
-  const sendAttachment = async (file, caption='') => {
+  const sendAttachment = async (file, caption='', replyToId=null, replyTo=null) => {
     if(file.size>5*1024*1024) throw new Error('Files must be 5 MB or smaller.');
     const ext=(file.name.split('.').pop()||'bin').toLowerCase();
     const path=`${profile.id}/${active.id}/${Date.now()}-${crypto.randomUUID()}.${ext}`;
@@ -776,13 +857,36 @@ function App() {
     if(uploadError) throw uploadError;
     const {data,error}=await supabase.from('messages').insert({
       conversation_id:active.id,sender_id:profile.id,content:caption || file.name,
-      attachment_url:path,attachment_name:file.name,attachment_type:file.type,attachment_size:file.size
+      attachment_url:path,attachment_name:file.name,attachment_type:file.type,attachment_size:file.size,reply_to_message_id:replyToId,reply_to_sender_id:replyTo?.sender_id||null,reply_to_content:replyTo?.content||replyTo?.attachment_name||null
     }).select().single();
     if(error) throw error;
+    if (active?.other_id && active.other_id !== profile.id) {
+      const { error: noticeError } = await supabase.from('chatter_notifications').insert({
+        recipient_user_id: active.other_id, actor_user_id: profile.id, notification_type: 'new_message',
+        target_type: 'conversation', target_id: active.id, body: 'Sent you an attachment: ' + file.name.slice(0,120),
+      });
+      if (noticeError) console.warn('Attachment notification could not be saved:', noticeError.message);
+    }
     const {data:signed}=await supabase.storage.from('chat-media').createSignedUrl(path,3600);
     const localMessage={...data,attachment_url:signed?.signedUrl||null};
     setMessages(current=>current.some(m=>m.id===data.id)?current:[...current,localMessage]);
     loadConversations(profile.id,false);
+  };
+
+  const editMessage = async (messageId, content) => {
+    const { data, error } = await supabase.from('messages')
+      .update({ content, edited_at: new Date().toISOString() })
+      .eq('id', messageId).eq('sender_id', profile.id).select().single();
+    if (error) throw error;
+    setMessages(rows => rows.map(row => row.id === messageId ? { ...row, ...data } : row));
+  };
+
+  const deleteMessage = async messageId => {
+    const { data, error } = await supabase.from('messages')
+      .update({ content: '', deleted_at: new Date().toISOString() })
+      .eq('id', messageId).eq('sender_id', profile.id).select().single();
+    if (error) throw error;
+    setMessages(rows => rows.map(row => row.id === messageId ? { ...row, ...data } : row));
   };
 
   const saveProfile = async (changes, onCompressionProgress) => {
