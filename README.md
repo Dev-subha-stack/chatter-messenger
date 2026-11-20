@@ -34,6 +34,8 @@ Chatter is a mobile-first real-time messaging web app powered by Supabase.
 ## PWA install
 Deploy over HTTPS, then use the browser's Install app / Add to Home Screen option. The service worker caches the app shell and static assets; authentication, messages and uploads still require a network connection.
 
+- Client-side media compression runs in the browser for images and supported video formats, with visible progress, before/after sizes and an original-file fallback when video encoding is unavailable
+
 ## Next implementation steps
 1. Add a posts/feed data model and real Create flow.
 1. Build the real social feed and post creation tables/UI.
