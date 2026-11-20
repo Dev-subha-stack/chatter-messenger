@@ -161,13 +161,13 @@ function ChatList({ conversations, activeId, onSelect, profiles, currentProfile,
   </aside>;
 }
 
-function MessageBubble({ message, mine, onOpenMedia, onReply, replyMessage, currentProfile, other, onEdit, onDelete, customEmojis = [] }) {
+function MessageBubble({ message, mine, onOpenMedia, onReply, replyMessage, onJumpToMessage, currentProfile, other, onEdit, onDelete, customEmojis = [] }) {
   const isImage = message.attachment_type?.startsWith('image/');
   const isVideo = message.attachment_type?.startsWith('video/');
   const [editing,setEditing] = useState(false);
   const [draft,setDraft] = useState(message.content || '');
   const [menuOpen,setMenuOpen] = useState(false);
-  const quote = replyMessage || (message.reply_to_message_id ? {sender_id:message.reply_to_sender_id,content:message.reply_to_content} : null);
+  const quote = replyMessage || (message.reply_to_message_id ? {id:message.reply_to_message_id,sender_id:message.reply_to_sender_id,content:message.reply_to_content} : null);
   const quotedSenderId = quote?.sender_id || message.reply_to_sender_id;
   const quotedSender = quotedSenderId === currentProfile?.id ? 'You' : (quotedSenderId === other?.id ? (other?.display_name || 'message') : 'message');
   const quotedContent = quote?.deleted_at ? 'This message was deleted' : (quote?.content || message.reply_to_content || quote?.attachment_name || (quote?.attachment_type?.startsWith('image/') ? 'Photo' : quote?.attachment_type?.startsWith('video/') ? 'Video' : 'Original message'));
@@ -211,8 +211,8 @@ function MessageBubble({ message, mine, onOpenMedia, onReply, replyMessage, curr
     try { await onDelete?.(message.id); }
     catch (error) { window.alert(error?.message || 'Could not delete this message.'); }
   };
-  return <div className={`message-line ${mine ? 'mine' : 'theirs'}`}><div className={`message-bubble ${mine ? 'bubble-mine' : 'bubble-theirs'}`}>
-    {quote && <div className="message-reply-preview"><small><CornerDownRight size={11}/> Replying to {quotedSender}</small><span>{renderRichContent(quotedContent, customEmojis)}</span></div>}
+  return <div id={`message-${message.id}`} className={`message-line ${mine ? 'mine' : 'theirs'}`}><div className={`message-bubble ${mine ? 'bubble-mine' : 'bubble-theirs'}`}>
+    {quote && <button type="button" className="message-reply-preview" onClick={() => onJumpToMessage?.(quote.id || message.reply_to_message_id)} disabled={!quote.id && !message.reply_to_message_id} title="Jump to original message"><small><CornerDownRight size={11}/> Replying to {quotedSender}</small><span>{renderRichContent(quotedContent, customEmojis)}</span></button>}
     {message.deleted_at ? <span className="deleted-message">This message was deleted</span> : <>
       {message.attachment_url && (isImage
         ? <button type="button" className="message-attachment-image media-open-button" onClick={() => onOpenMedia?.({src:message.attachment_url,type:'image',name:message.attachment_name})}><img src={message.attachment_url} alt={message.attachment_name || 'Shared image'}/></button>
@@ -224,9 +224,8 @@ function MessageBubble({ message, mine, onOpenMedia, onReply, replyMessage, curr
         : message.content && message.content !== '📊 Poll' && (!message.attachment_url || message.content !== message.attachment_name) && <span>{renderRichContent(message.content, customEmojis)}</span>}
       {message.poll && <PollCard poll={message.poll} currentUserId={currentProfile?.id}/>}
     </>}
-    {messageReactions.length > 0 && <div className="message-reactions">{[...new Set(messageReactions.map(row => row.emoji))].map(emoji => { const rows = messageReactions.filter(row => row.emoji === emoji); const mineReaction = rows.some(row => row.user_id === currentProfile?.id); return <button type="button" key={emoji} className={mineReaction ? 'selected' : ''} onClick={() => toggleReaction(emoji)} disabled={reactionBusy}><span>{emoji}</span><b>{rows.length}</b></button>; })}</div>}
-    {!message.deleted_at && <div className="message-reaction-tools"><div className="message-reaction-picker-wrap"><button type="button" className="message-reaction-add" onClick={() => setReactionPickerOpen(value => !value)} aria-label="Add a reaction" title="Add reaction"><Smile size={13}/></button>{reactionPickerOpen && <div className="message-reaction-popover">{reactionChoices.map(emoji => <button type="button" key={emoji} onClick={() => toggleReaction(emoji)}>{emoji}</button>)}</div>}</div></div>}
-    <div className="message-meta"><time>{timeLabel(message.created_at)}{message.edited_at && !message.deleted_at ? ' · edited' : ''}</time>{mine && <CheckCheck size={14} className="read-tick"/>}<button type="button" className="message-reply-action" onClick={onReply} title="Reply to message"><CornerDownRight size={13}/></button>{mine && !message.deleted_at && !editing && <div className="message-actions-wrap"><button type="button" className="message-reply-action" title="Message options" onClick={() => setMenuOpen(value => !value)}><MoreHorizontal size={15}/></button>{menuOpen && <div className="message-actions-menu"><button type="button" onClick={() => {setDraft(message.content || '');setEditing(true);setMenuOpen(false)}}><Pencil size={13}/> Edit</button><button type="button" className="danger" onClick={deleteThis}><Trash2 size={13}/> Delete</button></div>}</div>}</div>
+    {messageReactions.length > 0 && <div className="message-reactions" aria-label="Message reactions">{[...new Set(messageReactions.map(row => row.emoji))].map(emoji => { const rows = messageReactions.filter(row => row.emoji === emoji); const mineReaction = rows.some(row => row.user_id === currentProfile?.id); return <button type="button" key={emoji} className={mineReaction ? 'selected' : ''} onClick={() => toggleReaction(emoji)} disabled={reactionBusy} aria-pressed={mineReaction} aria-label={`${emoji}, ${rows.length} reactions`}><span className="reaction-emoji">{emoji}</span><span className="reaction-count">{rows.length}</span></button>; })}</div>}
+    <div className="message-meta"><time>{timeLabel(message.created_at)}{message.edited_at && !message.deleted_at ? ' · edited' : ''}</time>{mine && <CheckCheck size={14} className="read-tick"/>}{!message.deleted_at && <div className="message-reaction-picker-wrap"><button type="button" className="message-react-trigger" onClick={() => setReactionPickerOpen(value => !value)} aria-label="React to message" aria-expanded={reactionPickerOpen} title="Add reaction"><Smile size={14}/></button>{reactionPickerOpen && <div className="message-reaction-popover" role="group" aria-label="Choose a reaction">{reactionChoices.map(emoji => <button type="button" key={emoji} onClick={() => toggleReaction(emoji)} aria-label={emoji}>{emoji}</button>)}</div>}</div>}<button type="button" className="message-reply-action" onClick={onReply} title="Reply to message"><CornerDownRight size={13}/></button>{mine && !message.deleted_at && !editing && <div className="message-actions-wrap"><button type="button" className="message-reply-action" title="Message options" onClick={() => setMenuOpen(value => !value)}><MoreHorizontal size={15}/></button>{menuOpen && <div className="message-actions-menu"><button type="button" onClick={() => {setDraft(message.content || '');setEditing(true);setMenuOpen(false)}}><Pencil size={13}/> Edit</button><button type="button" className="danger" onClick={deleteThis}><Trash2 size={13}/> Delete</button></div>}</div>}</div>
   </div></div>;
 }
 
@@ -329,12 +328,27 @@ function ChatPanel({ conversation, other, currentProfile, messages, onSend, onSe
     } catch (error) { window.alert(error.message || 'Message could not be sent.'); }
     finally { setSending(false);setUploading(false);inputRef.current?.focus(); }
   };
+  const jumpToMessage = async messageId => {
+    if (!messageId || !conversation?.id) return;
+    const scrollToTarget = () => document.getElementById(`message-${messageId}`)?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    if (document.getElementById(`message-${messageId}`)) { scrollToTarget(); return; }
+    const { data, error } = await supabase.from('messages').select('*').eq('id', messageId).eq('conversation_id', conversation.id).maybeSingle();
+    if (error || !data) return;
+    let hydrated = data;
+    if (data.attachment_url) {
+      const { data: signed } = await supabase.storage.from('chat-media').createSignedUrl(data.attachment_url, 3600);
+      hydrated = { ...data, attachment_url: signed?.signedUrl || null };
+    }
+    const [withPoll] = await hydratePollRows([hydrated]);
+    setMessages(current => [...current.filter(row => row.id !== messageId), withPoll].sort((a, b) => new Date(a.created_at) - new Date(b.created_at)));
+    window.setTimeout(scrollToTarget, 180);
+  };
   if (!conversation) return <main className="chat-placeholder"><div className="placeholder-art"><div className="art-orbit orbit-a"/><div className="art-orbit orbit-b"/><div className="art-core"><MessageCircle size={35} fill="currentColor"/></div><span className="art-spark spark-a">✳</span><span className="art-spark spark-b">✦</span></div><div className="placeholder-copy"><span className="eyebrow">A LITTLE CLOSER</span><h2>Every good story<br/>starts with <em>hello.</em></h2><p>Choose a conversation or find someone new to talk to.</p></div><div className="placeholder-footer"><Lock size={13}/> Your messages stay between you and the people you chat with.</div></main>;
   return <main className="chat-panel">
     <header className="chat-header"><div className="chat-header-person"><button className="icon-button mobile-back" onClick={onBack}><ArrowLeft size={19}/></button><button className="header-avatar-button" onClick={onOpenProfile}><Avatar profile={other} size="md"/></button><button className="header-person-copy" onClick={onOpenProfile}><strong>{other?.display_name || 'Chatter user'}</strong><small><i className={otherTyping || onlineUserIds?.has(other?.id) ? 'online-dot' : 'offline-dot'}/> <span className={otherTyping || onlineUserIds?.has(other?.id) ? 'status-online' : 'status-offline'}>{otherTyping ? 'typing…' : (onlineUserIds?.has(other?.id) ? 'Online' : 'Offline')}</span>{!otherTyping && <><span>·</span><span style={{color:other?.username_color || '#A3E6D3'}}>@{other?.username || 'member'}</span></>}</small></button></div><div className="chat-header-actions"><span className="header-divider"/><button className="icon-button" onClick={() => setShowWallpaper(true)} title="Chat wallpaper"><Image size={18}/></button><button className="icon-button" onClick={() => setShowDetails(v => !v)} title="Conversation details"><Info size={18}/></button></div></header>
     <div className="chat-body" data-wallpaper={wallpaper?.theme || 'default'} style={wallpaper?.url ? {backgroundImage:`linear-gradient(rgba(5,12,15,.38),rgba(5,12,15,.38)),url("${wallpaper.url}")`,backgroundSize:'cover',backgroundPosition:'center'} : undefined} onClick={() => showDetails && setShowDetails(false)}>
       <div className="day-divider"><span>YOUR CONVERSATION</span></div>
-      {loading ? <div className="messages-loading">Loading messages…</div> : <>{!messages.length && <div className="start-card"><div className="start-avatar"><Avatar profile={other} size="xl"/></div><strong>{other?.display_name || 'Chatter user'}</strong><span>@{other?.username || 'member'}</span>{other?.bio && <p>{other.bio}</p>}<small>This is the beginning of your conversation.</small><button className="text-button" onClick={onOpenProfile}>View profile <ArrowUp size={13}/></button></div>}{messages.map(message => <MessageBubble key={message.id} message={message} mine={message.sender_id === currentProfile?.id} currentProfile={currentProfile} other={other} customEmojis={customEmojis} onEdit={onEditMessage} onDelete={onDeleteMessage} onOpenMedia={onOpenMedia} onReply={() => setReplyTo(message)} replyMessage={messages.find(row => row.id === message.reply_to_message_id)}/>)}</>}
+      {loading ? <div className="messages-loading">Loading messages…</div> : <>{!messages.length && <div className="start-card"><div className="start-avatar"><Avatar profile={other} size="xl"/></div><strong>{other?.display_name || 'Chatter user'}</strong><span>@{other?.username || 'member'}</span>{other?.bio && <p>{other.bio}</p>}<small>This is the beginning of your conversation.</small><button className="text-button" onClick={onOpenProfile}>View profile <ArrowUp size={13}/></button></div>}{messages.map(message => <MessageBubble key={message.id} message={message} mine={message.sender_id === currentProfile?.id} currentProfile={currentProfile} other={other} customEmojis={customEmojis} onEdit={onEditMessage} onDelete={onDeleteMessage} onOpenMedia={onOpenMedia} onReply={() => setReplyTo(message)} onJumpToMessage={jumpToMessage} replyMessage={messages.find(row => row.id === message.reply_to_message_id)}/>)}</>}
       <div ref={endRef}/>
     </div>
     <form className="composer" onSubmit={submit}>
@@ -968,8 +982,13 @@ function App() {
   };
 
   const sendMessage = async (content, replyToId = null, replyTo = null, pollDraft = null) => {
-    const mentions = getMentionIds(content, profiles, profile.id);
-    const { data, error } = await supabase.from('messages').insert({ conversation_id:active.id, sender_id:profile.id, content, reply_to_message_id: replyToId, reply_to_sender_id: replyTo?.sender_id || null, reply_to_content: replyTo?.content || replyTo?.attachment_name || null, mentions }).select().single();
+  const mentions = getMentionIds(content, profiles, profile.id);
+    const replySnapshot = replyToId ? {
+      reply_to_message_id: replyToId,
+      reply_to_sender_id: replyTo?.sender_id || null,
+      reply_to_content: replyTo?.deleted_at ? 'This message was deleted' : (replyTo?.content || replyTo?.attachment_name || (replyTo?.attachment_type?.startsWith('image/') ? 'Photo' : replyTo?.attachment_type?.startsWith('video/') ? 'Video' : replyTo?.poll ? '📊 Poll' : 'Attachment')),
+    } : { reply_to_message_id: null, reply_to_sender_id: null, reply_to_content: null };
+    const { data, error } = await supabase.from('messages').insert({ conversation_id:active.id, sender_id:profile.id, content, ...replySnapshot, mentions }).select().single();
     if (error) throw error;
     if (pollDraft) {
       try {
@@ -1065,7 +1084,10 @@ function App() {
     if(uploadError) throw uploadError;
     const {data,error}=await supabase.from('messages').insert({
       conversation_id:active.id,sender_id:profile.id,content:caption || file.name,
-      attachment_url:path,attachment_name:file.name,attachment_type:file.type,attachment_size:file.size,reply_to_message_id:replyToId,reply_to_sender_id:replyTo?.sender_id||null,reply_to_content:replyTo?.content||replyTo?.attachment_name||null
+      attachment_url:path,attachment_name:file.name,attachment_type:file.type,attachment_size:file.size,
+      reply_to_message_id:replyToId,
+      reply_to_sender_id:replyTo?.sender_id||null,
+      reply_to_content:replyToId ? (replyTo?.deleted_at ? 'This message was deleted' : (replyTo?.content||replyTo?.attachment_name||(replyTo?.attachment_type?.startsWith('image/')?'Photo':replyTo?.attachment_type?.startsWith('video/')?'Video':replyTo?.poll?'📊 Poll':'Attachment'))) : null
     }).select().single();
     if(error) throw error;
     if (active?.other_id && active.other_id !== profile.id) {
