@@ -277,7 +277,7 @@ function MessageBubble({ message, mine, onOpenMedia, onReply, replyMessage, onJu
     catch (error) { window.alert(error?.message || 'Could not delete this message.'); }
   };
   return <div id={`message-${message.id}`} className={`message-line ${mine ? 'mine' : 'theirs'}`}><div
-    className={`message-bubble ${mine ? 'bubble-mine' : 'bubble-theirs'}`}
+    className={`message-bubble ${mine ? 'bubble-mine bubble-sent-glass' : 'bubble-theirs'}`}
     onContextMenu={event => { event.preventDefault(); clearLongPress(); openContextMenu(event.clientX, event.clientY); }}
     onTouchStart={startLongPress}
     onTouchEnd={clearLongPress}
