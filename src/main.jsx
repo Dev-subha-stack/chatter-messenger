@@ -1,5 +1,6 @@
 import React, { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
-import { createPortal, createRoot } from 'react-dom';
+import { createRoot } from 'react-dom/client';
+import { createPortal } from 'react-dom';
 import {
   ArrowLeft, ArrowUp, Bell, Check, CheckCheck, ChevronDown, ChevronLeft, CircleHelp,
   ImagePlus, Info, LogOut, MessageCircle, MoreHorizontal, Paperclip, Pencil,
