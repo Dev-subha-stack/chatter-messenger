@@ -299,7 +299,20 @@ function MessageBubble({ message, mine, onOpenMedia, onReply, replyMessage, onJu
     </>}
     {messageReactions.length > 0 && <div className="message-reaction-row" aria-label="Message reactions">{[...new Set(messageReactions.map(row => row.emoji))].map(emoji => { const rows = messageReactions.filter(row => row.emoji === emoji); const mineReaction = rows.some(row => row.user_id === currentProfile?.id); return <button type="button" key={emoji} className={mineReaction ? 'selected' : ''} onClick={() => toggleReaction(emoji)} disabled={reactionBusy} aria-pressed={mineReaction} aria-label={`${emoji}, ${rows.length} reactions`}><span className="reaction-emoji">{emoji}</span><span className="reaction-count">{rows.length}</span></button>; })}
     </div>}
-    <div className="message-meta"><time>{timeLabel(message.created_at)}{message.edited_at && !message.deleted_at ? ' · edited' : ''}</time>{mine && <CheckCheck size={14} className="read-tick" aria-label="Sent"/>}</div>
+    <div className="message-meta">
+      <time>{timeLabel(message.created_at)}{message.edited_at && !message.deleted_at ? ' · edited' : ''}</time>
+      {mine && <CheckCheck size={14} className="read-tick" aria-label="Sent"/>}
+      {!message.deleted_at && <button
+        type="button"
+        className="message-react-open"
+        title="React or reply to this message"
+        aria-label="Open message reactions and actions"
+        onClick={event => {
+          const rect = event.currentTarget.getBoundingClientRect();
+          openContextMenu(rect.right, rect.top);
+        }}
+      ><Smile size={13}/><span>React</span></button>}
+    </div>
     {contextMenu && createPortal(<div ref={contextMenuRef} className="message-context-menu" role="menu" style={{left:contextMenu.x,top:contextMenu.y}} onPointerDown={event => event.stopPropagation()} onContextMenu={event => event.preventDefault()}>
       <div className="message-context-label">React</div>
       <div className="message-context-reactions">{reactionChoices.map(emoji => <button type="button" key={emoji} role="menuitem" onClick={() => toggleReaction(emoji)} aria-label={`React with ${emoji}`}>{emoji}</button>)}</div>
