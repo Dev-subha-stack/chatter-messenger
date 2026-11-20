@@ -1,5 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { Heart, Repeat2, MessageCircle, CornerDownRight, Send, Smile, Trash2, X, Bell, ImagePlus, Search, Plus, Check, BarChart3 } from 'lucide-react';
+import { Heart, Repeat2, MessageCircle, CornerDownRight, Send, Smile, Trash2, X, Bell, ImagePlus, Search, Plus, Check, BarChart3, Volume2 } from 'lucide-react';
 import { supabase } from './supabase';
 import { compressMediaFile } from './mediaCompressor';
 import InlineVideoPlayer from './InlineVideoPlayer';
@@ -350,7 +350,52 @@ export function NotificationCenter({ currentUserId, onOpenNotification }) {
   const [notifications, setNotifications] = useState([]);
   const [open, setOpen] = useState(false);
   const [loading, setLoading] = useState(false);
+  const [soundEnabled, setSoundEnabled] = useState(() => localStorage.getItem('chatter-sound-notifications') !== 'false');
+  const audioContextRef = useRef(null);
   const unread = notifications.filter(item => !item.is_read).length;
+
+  const playNotificationSound = (force = false) => {
+    if (!soundEnabled && !force) return;
+    try {
+      const AudioContextClass = window.AudioContext || window.webkitAudioContext;
+      if (!AudioContextClass) return;
+      const audio = audioContextRef.current || (audioContextRef.current = new AudioContextClass());
+      if (audio.state === 'suspended') audio.resume().catch(() => {});
+      const oscillator = audio.createOscillator();
+      const gain = audio.createGain();
+      const start = audio.currentTime;
+      oscillator.type = 'sine';
+      oscillator.frequency.setValueAtTime(760, start);
+      oscillator.frequency.exponentialRampToValueAtTime(980, start + 0.075);
+      oscillator.frequency.exponentialRampToValueAtTime(690, start + 0.17);
+      gain.gain.setValueAtTime(0.0001, start);
+      gain.gain.exponentialRampToValueAtTime(0.055, start + 0.014);
+      gain.gain.exponentialRampToValueAtTime(0.0001, start + 0.23);
+      oscillator.connect(gain);
+      gain.connect(audio.destination);
+      oscillator.start(start);
+      oscillator.stop(start + 0.24);
+    } catch (error) {
+      console.warn('Notification sound could not play:', error);
+    }
+  };
+
+  // Unlock Web Audio on the first user gesture; browsers block unsolicited audio until then.
+  useEffect(() => {
+    const unlock = () => {
+      if (!soundEnabled) return;
+      const AudioContextClass = window.AudioContext || window.webkitAudioContext;
+      if (!AudioContextClass) return;
+      try {
+        const audio = audioContextRef.current || (audioContextRef.current = new AudioContextClass());
+        if (audio.state === 'suspended') audio.resume().catch(() => {});
+      } catch (error) {
+        console.warn('Notification audio is unavailable:', error);
+      }
+    };
+    document.addEventListener('pointerdown', unlock, { once: true });
+    return () => document.removeEventListener('pointerdown', unlock);
+  }, [soundEnabled]);
   const refresh = async () => {
     if (!currentUserId) return;
     setLoading(true);
@@ -365,10 +410,15 @@ export function NotificationCenter({ currentUserId, onOpenNotification }) {
   useEffect(() => {
     if (!currentUserId) return;
     const channel = supabase.channel(`notifications:${currentUserId}`)
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'chatter_notifications', filter: `recipient_user_id=eq.${currentUserId}` }, refresh)
+      .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'chatter_notifications', filter: `recipient_user_id=eq.${currentUserId}` }, payload => {
+        if (payload.new?.recipient_user_id === currentUserId && payload.new?.actor_user_id !== currentUserId) playNotificationSound();
+        refresh();
+      })
+      .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'chatter_notifications', filter: `recipient_user_id=eq.${currentUserId}` }, refresh)
+      .on('postgres_changes', { event: 'DELETE', schema: 'public', table: 'chatter_notifications', filter: `recipient_user_id=eq.${currentUserId}` }, refresh)
       .subscribe();
     return () => { supabase.removeChannel(channel); };
-  }, [currentUserId]);
+  }, [currentUserId, soundEnabled]);
   const markRead = async item => {
     if (!item.is_read) {
       const { error } = await supabase.from('chatter_notifications').update({ is_read: true }).eq('id', item.id).eq('recipient_user_id', currentUserId);
@@ -382,6 +432,12 @@ export function NotificationCenter({ currentUserId, onOpenNotification }) {
     </button>
     {open && <div className="notification-popover">
       <div className="notification-popover-head"><b>Notifications</b><span>{unread ? `${unread} unread` : 'All caught up'}</span><button type="button" onClick={() => setOpen(false)} aria-label="Close notifications"><X size={15}/></button></div>
+      <label className="notification-sound-setting"><span><Volume2 size={14}/> Sound alerts</span><input type="checkbox" checked={soundEnabled} onChange={event => {
+        const enabled = event.target.checked;
+        setSoundEnabled(enabled);
+        localStorage.setItem('chatter-sound-notifications', String(enabled));
+        if (enabled) playNotificationSound(true);
+      }}/></label>
       <div className="notification-items">
         {loading && !notifications.length ? <p className="notification-empty">Loading notifications…</p> : notifications.length ? notifications.map(item => <button type="button" className={`notification-item ${item.is_read ? '' : 'unread'}`} key={item.id} onClick={async () => { await markRead(item); setOpen(false); onOpenNotification?.(item); }}>
           <span className="notification-avatar">{item.actor?.avatar_url ? <img src={item.actor.avatar_url} alt=""/> : initials(item.actor?.display_name || item.actor?.username || 'C')}</span>
