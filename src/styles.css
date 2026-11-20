@@ -163,3 +163,12 @@ button,.primary-button,.icon-button,.quick-action,.chat-row{transition:transform
 @media (max-width: 520px) {
   .notification-popover { position: fixed; top: 64px; right: 12px; }
 }
+
+
+/* Recover visibly from React render failures instead of a blank screen. */
+.app-crash-fallback{min-height:100vh;display:grid;place-items:center;padding:24px;background:#091318;color:#e9f0ef}
+.app-crash-card{width:min(440px,100%);padding:28px;border:1px solid rgba(196,224,214,.13);border-radius:18px;background:#13252b;box-shadow:0 28px 90px #0007}
+.app-crash-card h1{margin:20px 0 8px;font:800 24px Manrope,sans-serif}
+.app-crash-card p{color:#91a59d;font-size:12px;line-height:1.65}
+.app-crash-card button{margin-top:12px;padding:11px 17px;border:0;border-radius:10px;background:#a3e6d3;color:#10201d;font-weight:800;cursor:pointer}
+.app-crash-card small{display:block;margin-top:13px;color:#71857d;font-size:10px;line-height:1.5;overflow-wrap:anywhere}

@@ -856,6 +856,7 @@ function App() {
   if (!isSupabaseConfigured) return <div className="setup-screen"><div className="setup-card"><div className="brand-mark"><MessageCircle size={23} fill="currentColor"/><span>chatter</span><i/></div><span className="eyebrow">ALMOST READY</span><h1>Connect your<br/><em>Supabase project.</em></h1><p>This app is ready for a Supabase backend. Add your project URL and publishable key to the environment file to turn on sign-in, profiles, and live messaging.</p><div className="setup-steps"><div><b>01</b><span>Create a Supabase project</span></div><div><b>02</b><span>Run <code>supabase/schema.sql</code></span></div><div><b>03</b><span>Copy values into <code>.env.local</code></span></div></div><div className="setup-note"><Info size={15}/> Never put your Supabase service-role key in this frontend.</div></div></div>;
   if (authLoading) return <div className="loading-screen"><div className="brand-symbol"><MessageCircle size={18} fill="currentColor"/></div><span>Getting your space ready…</span></div>;
   if (!session) return <AuthScreen/>;
+  if (!profile || profile.id !== session.user.id) return <div className="loading-screen"><div className="brand-symbol"><MessageCircle size={18} fill="currentColor"/></div><span>Loading your profile…</span></div>;
   const activeOther = active ? profiles[active.other_id] : null;
   const allProfiles = Object.values(profiles);
 
@@ -885,4 +886,31 @@ function App() {
   </div>;
 }
 
-createRoot(document.getElementById('root')).render(<App/>);
+class AppErrorBoundary extends React.Component {
+  constructor(props) {
+    super(props);
+    this.state = { error: null };
+  }
+  static getDerivedStateFromError(error) {
+    return { error };
+  }
+  componentDidCatch(error, info) {
+    console.error('Chatter failed to render:', error, info);
+  }
+  render() {
+    if (this.state.error) {
+      return <div className="app-crash-fallback">
+        <div className="app-crash-card">
+          <div className="brand-symbol"><MessageCircle size={18} fill="currentColor"/></div>
+          <h1>Chatter hit a problem.</h1>
+          <p>The app could not finish loading. Your account and messages have not been deleted.</p>
+          <button type="button" onClick={() => window.location.reload()}>Reload Chatter</button>
+          <small>{String(this.state.error?.message || 'Unexpected app error').slice(0, 180)}</small>
+        </div>
+      </div>;
+    }
+    return this.props.children;
+  }
+}
+
+createRoot(document.getElementById('root')).render(<AppErrorBoundary><App/></AppErrorBoundary>);
