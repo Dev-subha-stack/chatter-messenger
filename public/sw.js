@@ -1,30 +1,40 @@
-const CACHE = 'chatter-shell-v4';
+const CACHE = 'chatter-shell-v5';
 const SHELL = ['/', '/manifest.webmanifest', '/icons/icon-192.svg', '/icons/icon-512.svg'];
+
 self.addEventListener('install', event => {
   event.waitUntil(caches.open(CACHE).then(cache => cache.addAll(SHELL)));
   self.skipWaiting();
 });
+
 self.addEventListener('activate', event => {
-  event.waitUntil(caches.keys().then(keys => Promise.all(keys.filter(key => key !== CACHE).map(key => caches.delete(key)))));
+  event.waitUntil(
+    caches.keys().then(keys => Promise.all(
+      keys.filter(key => key.startsWith('chatter-shell-') && key !== CACHE).map(key => caches.delete(key))
+    ))
+  );
   self.clients.claim();
 });
+
 self.addEventListener('fetch', event => {
-  const req = event.request;
-  if (req.method !== 'GET' || new URL(req.url).origin !== self.location.origin) return;
-  if (req.mode === 'navigate') {
-    event.respondWith(fetch(req).then(res => {
-      if (res.ok) caches.open(CACHE).then(cache => cache.put('/', res.clone()));
-      return res;
-    }).catch(() => caches.match('/')));
+  const request = event.request;
+  if (request.method !== 'GET' || new URL(request.url).origin !== self.location.origin) return;
+
+  if (request.mode === 'navigate') {
+    event.respondWith(
+      fetch(request).then(response => {
+        if (response.ok) caches.open(CACHE).then(cache => cache.put('/', response.clone()));
+        return response;
+      }).catch(() => caches.match('/'))
+    );
     return;
   }
-  if (['script', 'style', 'image', 'font'].includes(req.destination)) {
-    event.respondWith(caches.match(req).then(cached => {
-      const fresh = fetch(req).then(res => {
-        if (res.ok) caches.open(CACHE).then(cache => cache.put(req, res.clone()));
-        return res;
-      }).catch(() => cached);
-      return cached || fresh;
-    }));
+
+  if (['script', 'style', 'image', 'font'].includes(request.destination)) {
+    event.respondWith(
+      fetch(request).then(response => {
+        if (response.ok) caches.open(CACHE).then(cache => cache.put(request, response.clone()));
+        return response;
+      }).catch(() => caches.match(request))
+    );
   }
 });

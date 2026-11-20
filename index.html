@@ -14,10 +14,70 @@
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=Manrope:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+    <style>
+      #chatter-boot-recovery{min-height:100vh;display:grid;place-items:center;padding:24px;background:#091318;color:#e9f0ef;font-family:'DM Sans',sans-serif}
+      #chatter-boot-recovery section{width:min(440px,100%);padding:28px;border:1px solid #ffffff1b;border-radius:18px;background:#122126;box-shadow:0 20px 70px #0007}
+      #chatter-boot-recovery h1{margin:0 0 10px;font:800 25px Manrope,sans-serif}
+      #chatter-boot-recovery p{color:#a1b4ac;font-size:13px;line-height:1.65}
+      #chatter-boot-recovery button{margin-top:12px;padding:11px 17px;border:0;border-radius:10px;background:#a3e6d3;color:#10201d;font-weight:800;cursor:pointer}
+      #chatter-boot-recovery small{display:block;margin-top:12px;color:#71857d;font-size:10px}
+    </style>
+    <script>
+      (() => {
+        const retryKey = 'chatter-boot-recovery-v1';
+        const rememberError = value => {
+          try { window.__CHATTER_BOOT_ERROR__ = String(value || 'Unknown startup error').slice(0, 220); } catch {}
+        };
+        window.addEventListener('error', event => {
+          if (event?.message) rememberError(event.message);
+        });
+        window.addEventListener('unhandledrejection', event => {
+          rememberError(event?.reason?.message || event?.reason || 'An app startup request failed');
+        });
+        const clearStaleAppCache = async () => {
+          try {
+            if ('serviceWorker' in navigator) {
+              const registrations = await navigator.serviceWorker.getRegistrations();
+              await Promise.all(registrations.map(registration => registration.unregister()));
+            }
+          } catch (error) { rememberError(error?.message); }
+          try {
+            if ('caches' in window) {
+              const keys = await caches.keys();
+              await Promise.all(keys.filter(key => key.startsWith('chatter-shell-')).map(key => caches.delete(key)));
+            }
+          } catch (error) { rememberError(error?.message); }
+        };
+        document.addEventListener('DOMContentLoaded', () => {
+          const root = document.getElementById('root');
+          window.setTimeout(async () => {
+            if (!root) return;
+            if (root.childElementCount > 0) {
+              try { sessionStorage.removeItem(retryKey); } catch {}
+              return;
+            }
+            let alreadyRetried = false;
+            try { alreadyRetried = sessionStorage.getItem(retryKey) === '1'; } catch {}
+            if (!alreadyRetried) {
+              try { sessionStorage.setItem(retryKey, '1'); } catch {}
+              await clearStaleAppCache();
+              window.location.reload();
+              return;
+            }
+            root.innerHTML = '<div id="chatter-boot-recovery"><section><h1>Chatter did not start.</h1><p>The app has been unable to load in this browser. Its cached app files were reset once. Try reloading again, or open Chatter in an Incognito window to check whether a browser extension is interfering.</p><button id="chatter-retry-button" type="button">Reload Chatter</button><small>Existing sign-in details and account data have not been cleared.</small></section></div>';
+            document.getElementById('chatter-retry-button')?.addEventListener('click', () => window.location.reload());
+          }, 8000);
+        });
+      })();
+    </script>
   </head>
   <body>
     <div id="root"></div>
     <script type="module" src="/src/main.jsx"></script>
-    <script>if ("serviceWorker" in navigator) window.addEventListener("load", () => navigator.serviceWorker.register("/sw.js").catch(() => {}));</script>
+    <script>
+      if ('serviceWorker' in navigator) {
+        window.addEventListener('load', () => navigator.serviceWorker.register('/sw.js').catch(() => {}));
+      }
+    </script>
   </body>
 </html>
