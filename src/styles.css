@@ -1228,3 +1228,66 @@ button,.primary-button,.icon-button,.quick-action,.chat-row{transition:transform
   .chatter-app .message-react-open:hover,
   .chatter-app .message-react-open:focus-visible { opacity: 1 !important; }
 }
+
+
+/* Message readability, reply navigation feedback, and reliable custom video controls. */
+.chatter-app .message-bubble {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 8px;
+}
+.chatter-app .message-content {
+  display: block;
+  width: 100%;
+  margin: 0;
+  line-height: 1.65;
+  overflow-wrap: anywhere;
+}
+.chatter-app .message-reply-preview {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  width: 100%;
+  min-width: 0;
+  gap: 4px;
+  margin: 0 0 2px;
+  text-align: left;
+  white-space: normal;
+}
+.chatter-app .message-reply-preview span {
+  display: block;
+  width: 100%;
+  line-height: 1.45;
+  overflow-wrap: anywhere;
+}
+.chatter-app .message-footer,
+.chatter-app .message-meta {
+  margin-top: 0;
+}
+.chatter-app .message-jump-highlight .message-bubble {
+  animation: message-jump-pulse 1.8s ease-out;
+}
+@keyframes message-jump-pulse {
+  0%, 100% { outline: 0 solid rgba(163,230,211,0); }
+  18%, 58% { outline: 3px solid rgba(163,230,211,.95); box-shadow: 0 0 0 6px rgba(163,230,211,.18), 0 0 28px rgba(163,230,211,.25); }
+}
+.inline-video-player .inline-video-seek {
+  min-width: 36px;
+  flex: 1 1 70px;
+  cursor: pointer;
+  touch-action: pan-y;
+  pointer-events: auto;
+  z-index: 2;
+}
+.inline-video-player .inline-video-center-play {
+  z-index: 3;
+  pointer-events: auto;
+  cursor: pointer;
+}
+.inline-video-player .inline-video-controls button,
+.inline-video-player .inline-video-controls input {
+  position: relative;
+  z-index: 2;
+  pointer-events: auto;
+}
