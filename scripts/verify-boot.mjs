@@ -10,6 +10,11 @@ const fail = message => {
 };
 
 const mainSource = await readFile(path.join(root, 'src/main.jsx'), 'utf8');
+const contextEffect = mainSource.match(/useLayoutEffect\(\(\) => \{[\s\S]*?\}, \[contextMenu\]\);/);
+if (!contextEffect) fail('Message context menu layout effect is missing.');
+if (/setContextMenu\s*\(/.test(contextEffect[0])) {
+  fail('Context-menu layout effect must not update React state; this can cause maximum update depth error #185.');
+}
 if (!/import\s*\{\s*createRoot\s*\}\s*from\s*['"]react-dom\/client['"]\s*;/.test(mainSource)) {
   fail("createRoot must be imported from 'react-dom/client'.");
 }
