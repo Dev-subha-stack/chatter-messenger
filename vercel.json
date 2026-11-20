@@ -1,5 +1,5 @@
 {
   "framework": "vite",
-  "buildCommand": "npm run build && npm run verify:boot",
+  "buildCommand": "npm run build && npm run verify:boot && npm run test:message-menu",
   "outputDirectory": "dist"
 }
