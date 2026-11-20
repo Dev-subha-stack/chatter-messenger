@@ -4,7 +4,7 @@ import {
   ArrowLeft, ArrowUp, Bell, Check, CheckCheck, ChevronDown, ChevronLeft, CircleHelp,
   ImagePlus, Info, LogOut, MessageCircle, MoreHorizontal, Paperclip, Pencil,
   Plus, Search, Send, Settings, Smile, Sparkles, User, UserPlus, X, Camera,
-  Menu, Moon, Sun, CheckCircle2, Lock, Mail, ShieldCheck, Shield, Palette, PanelLeftClose, Home, MessageSquare, PlusCircle, UserCircle, BellRing, ArrowRight, Image, FileText, Eye, EyeOff
+  Menu, Moon, Sun, CheckCircle2, Lock, Mail, ShieldCheck, Shield, Palette, PanelLeftClose, Home, MessageSquare, PlusCircle, UserCircle, BellRing, ArrowRight, Image, FileText, Eye, EyeOff, Newspaper, Play
 } from 'lucide-react';
 import { isSupabaseConfigured, supabase } from './supabase';
 import { AppearanceDashboard, AdminDashboard, DEFAULT_APPEARANCE, APPEARANCE_ACCENTS } from './AppearanceAdmin';
@@ -103,17 +103,17 @@ function ProfileModal({ profile, onClose, onSave, onSignOut }) {
   </div>;
 }
 
-function NewChatModal({ profiles, currentUserId, onClose, onStart }) {
+function NewChatModal({ profiles, currentUserId, onlineUserIds, onClose, onStart }) {
   const [query, setQuery] = useState('');
   const matches = profiles.filter(p => p.id !== currentUserId && `${p.display_name} ${p.username}`.toLowerCase().includes(query.toLowerCase()));
   return <div className="modal-scrim" onMouseDown={e => e.target === e.currentTarget && onClose()}><div className="new-chat-modal">
     <div className="modal-top"><div><div className="eyebrow">FIND YOUR PEOPLE</div><h2>New conversation</h2></div><button className="icon-button" onClick={onClose}><X size={19}/></button></div>
     <div className="search-box"><Search size={16}/><input autoFocus value={query} onChange={e => setQuery(e.target.value)} placeholder="Search people or usernames"/></div>
-    <div className="people-list">{matches.length ? matches.map(p => <button className="person-row" key={p.id} onClick={() => onStart(p)}><Avatar profile={p}/><span className="person-info"><strong>{p.display_name}</strong><small>@{p.username || 'new-user'}{p.bio ? ` · ${p.bio}` : ''}</small></span><ArrowUp className="person-arrow" size={16}/></button>) : <div className="empty-search">{query ? 'No people found. Try another name.' : 'No other members yet. Invite someone to join.'}</div>}</div>
+    <div className="people-list">{matches.length ? matches.map(p => <button className="person-row" key={p.id} onClick={() => onStart(p)}><Avatar profile={p}/><span className="person-info"><strong>{p.display_name}</strong><small>@{p.username || 'new-user'} · <span className={onlineUserIds?.has(p.id) ? 'status-online' : 'status-offline'}>{onlineUserIds?.has(p.id) ? 'Online' : 'Offline'}</span>{p.bio ? ` · ${p.bio}` : ''}</small></span><ArrowUp className="person-arrow" size={16}/></button>) : <div className="empty-search">{query ? 'No people found. Try another name.' : 'No other members yet. Invite someone to join.'}</div>}</div>
   </div></div>;
 }
 
-function ChatList({ conversations, activeId, onSelect, profiles, currentProfile, onNewChat, onEditProfile, search, setSearch, loading, mobileBack }) {
+function ChatList({ conversations, activeId, onSelect, profiles, currentProfile, onlineUserIds, onNewChat, onEditProfile, search, setSearch, loading, mobileBack }) {
   const filtered = conversations.filter(c => {
     const other = profiles[c.other_id] || {};
     return `${other.display_name || ''} ${other.username || ''} ${c.last_message?.content || ''}`.toLowerCase().includes(search.toLowerCase());
@@ -126,33 +126,36 @@ function ChatList({ conversations, activeId, onSelect, profiles, currentProfile,
     <div className="chat-list">{loading ? <div className="list-state">Loading conversations…</div> : filtered.length ? filtered.map(c => {
       const other = profiles[c.other_id] || { display_name: 'Chatter user' };
       const active = c.id === activeId;
+      const isOnline = onlineUserIds?.has(other.id);
       return <button key={c.id} className={`chat-row ${active ? 'selected' : ''}`} onClick={() => onSelect(c)}>
-        <div className="avatar-holder"><Avatar profile={other} size="lg"/><i className="online-dot"/></div>
-        <div className="chat-row-copy"><div className="chat-row-top"><strong>{other.display_name}</strong><time>{timeLabel(c.last_message?.created_at || c.updated_at)}</time></div><div className="chat-row-bottom"><span>{c.last_message?.sender_id === currentProfile?.id ? 'You: ' : ''}{c.last_message?.content || 'Say hello 👋'}</span>{c.unread_count > 0 && <b className="unread-badge">{c.unread_count}</b>}</div></div>
+        <div className="avatar-holder"><Avatar profile={other} size="lg"/><i className={isOnline ? 'online-dot' : 'offline-dot'}/></div>
+        <div className="chat-row-copy"><div className="chat-row-top"><strong>{other.display_name}</strong><small className={isOnline ? 'status-online' : 'status-offline'}>{isOnline ? 'Online' : 'Offline'}</small><time>{timeLabel(c.last_message?.created_at || c.updated_at)}</time></div><div className="chat-row-bottom"><span>{c.last_message?.sender_id === currentProfile?.id ? 'You: ' : ''}{c.last_message?.content || 'Say hello 👋'}</span>{c.unread_count > 0 && <b className="unread-badge">{c.unread_count}</b>}</div></div>
       </button>;
     }) : <div className="empty-list"><div className="empty-icon"><MessageCircle size={21}/></div><strong>{search ? 'No matches' : 'No conversations yet'}</strong><p>{search ? 'Try a different search.' : 'Start a conversation with someone.'}</p>{!search && <button className="text-button" onClick={onNewChat}>Find people <ArrowUp size={14}/></button>}</div>}</div>
     <div className="sidebar-bottom"><div className="secure-note"><span className="secure-icon"><ShieldCheck size={14}/></span><span><strong>Your space is private</strong><small>Only you and your people.</small></span></div><div className="sidebar-user-foot"><span>MADE FOR GOOD CONVERSATIONS</span><button className="icon-button" onClick={onEditProfile}><Settings size={16}/></button></div></div>
   </aside>;
 }
 
-function MessageBubble({ message, mine }) {
+function MessageBubble({ message, mine, onOpenMedia }) {
+  const isImage = message.attachment_type?.startsWith('image/');
+  const isVideo = message.attachment_type?.startsWith('video/');
   return <div className={`message-line ${mine ? 'mine' : 'theirs'}`}><div className={`message-bubble ${mine ? 'bubble-mine' : 'bubble-theirs'}`}>
-    {message.deleted_at ? <span className="deleted-message">This message was deleted</span> : <>{message.attachment_url && (message.attachment_type?.startsWith('image/') ? <a className="message-attachment-image" href={message.attachment_url} target="_blank" rel="noreferrer"><img src={message.attachment_url} alt={message.attachment_name || 'Shared image'}/></a> : message.attachment_type?.startsWith('video/') ? <video className="message-attachment-video" src={message.attachment_url} controls playsInline/> : <a className="message-attachment-file" href={message.attachment_url} target="_blank" rel="noreferrer"><FileText size={18}/><span>{message.attachment_name || 'Download file'}</span><ArrowUp size={13}/></a>)}{message.content && (!message.attachment_url || message.content !== message.attachment_name) && <span>{message.content}</span>}</>}
+    {message.deleted_at ? <span className="deleted-message">This message was deleted</span> : <>{message.attachment_url && (isImage ? <button type="button" className="message-attachment-image media-open-button" onClick={() => onOpenMedia?.({src:message.attachment_url,type:'image',name:message.attachment_name})}><img src={message.attachment_url} alt={message.attachment_name || 'Shared image'}/></button> : isVideo ? <button type="button" className="message-video-open media-open-button" onClick={() => onOpenMedia?.({src:message.attachment_url,type:'video',name:message.attachment_name})}><video className="message-attachment-video" src={message.attachment_url} muted playsInline preload="metadata"/><span className="media-play-mark">▶</span></button> : <a className="message-attachment-file" href={message.attachment_url} target="_blank" rel="noreferrer"><FileText size={18}/><span>{message.attachment_name || 'Download file'}</span><ArrowUp size={13}/></a>)}{message.content && (!message.attachment_url || message.content !== message.attachment_name) && <span>{message.content}</span>}</>}
     <div className="message-meta"><time>{timeLabel(message.created_at)}</time>{mine && <CheckCheck size={14} className="read-tick"/>}</div>
   </div></div>;
 }
 
-function ChatPanel({ conversation, other, currentProfile, messages, onSend, onSendFile, loading, isMobile, onBack, onOpenProfile }) {
+function ChatPanel({ conversation, other, currentProfile, messages, onSend, onSendFile, loading, isMobile, onBack, onOpenProfile, onOpenMedia, onlineUserIds, wallpaper, onSaveWallpaper }) {
   const [draft, setDraft] = useState('');
   const [sending, setSending] = useState(false);
-  const [showDetails, setShowDetails] = useState(false);
+  const [showDetails, setShowDetails] = useState(false);\n  const [showWallpaper, setShowWallpaper] = useState(false);
   const [selectedFile, setSelectedFile] = useState(null);
   const [filePreview, setFilePreview] = useState('');
   const [uploading, setUploading] = useState(false);
   const fileInputRef = useRef(null);
   const endRef = useRef(null); const inputRef = useRef(null);
   useEffect(() => { endRef.current?.scrollIntoView({ behavior: 'smooth' }); }, [messages, conversation?.id]);
-  useEffect(() => { setDraft(''); setShowDetails(false); setSelectedFile(null); setFilePreview(''); }, [conversation?.id]);
+  useEffect(() => { setDraft(''); setShowDetails(false); setShowWallpaper(false); setSelectedFile(null); setFilePreview(''); }, [conversation?.id]);
   const chooseFile = async file => {
     if (!file) return;
     let chosen=file;
@@ -171,10 +174,10 @@ function ChatPanel({ conversation, other, currentProfile, messages, onSend, onSe
   const submit = async e => { e.preventDefault(); const value = draft.trim(); if ((!value && !selectedFile) || sending || uploading) return; setSending(true); try { if(selectedFile){setUploading(true);await onSendFile(selectedFile,value);setSelectedFile(null);setFilePreview('');} else await onSend(value); setDraft(''); } catch (e) { window.alert(e.message || 'Message could not be sent.'); } finally { setSending(false);setUploading(false); inputRef.current?.focus(); } };
   if (!conversation) return <main className="chat-placeholder"><div className="placeholder-art"><div className="art-orbit orbit-a"/><div className="art-orbit orbit-b"/><div className="art-core"><MessageCircle size={35} fill="currentColor"/></div><span className="art-spark spark-a">✳</span><span className="art-spark spark-b">✦</span></div><div className="placeholder-copy"><span className="eyebrow">A LITTLE CLOSER</span><h2>Every good story<br/>starts with <em>hello.</em></h2><p>Choose a conversation or find someone new to talk to.</p></div><div className="placeholder-footer"><Lock size={13}/> Your messages stay between you and the people you chat with.</div></main>;
   return <main className="chat-panel">
-    <header className="chat-header"><div className="chat-header-person"><button className="icon-button mobile-back" onClick={onBack}><ArrowLeft size={19}/></button><button className="header-avatar-button" onClick={onOpenProfile}><Avatar profile={other} size="md"/></button><button className="header-person-copy" onClick={onOpenProfile}><strong>{other?.display_name || 'Chatter user'}</strong><small><i className="online-dot"/> <span style={{color:other?.username_color || '#A3E6D3'}}>@{other?.username || 'member'}</span></small></button></div><div className="chat-header-actions"><span className="header-divider"/><button className="icon-button" onClick={() => setShowDetails(v => !v)} title="Conversation details"><Info size={18}/></button></div></header>
-    <div className="chat-body" onClick={() => showDetails && setShowDetails(false)}>
+    <header className="chat-header"><div className="chat-header-person"><button className="icon-button mobile-back" onClick={onBack}><ArrowLeft size={19}/></button><button className="header-avatar-button" onClick={onOpenProfile}><Avatar profile={other} size="md"/></button><button className="header-person-copy" onClick={onOpenProfile}><strong>{other?.display_name || 'Chatter user'}</strong><small><i className={onlineUserIds?.has(other?.id) ? 'online-dot' : 'offline-dot'}/> <span className={onlineUserIds?.has(other?.id) ? 'status-online' : 'status-offline'}>{onlineUserIds?.has(other?.id) ? 'Online' : 'Offline'}</span><span>·</span><span style={{color:other?.username_color || '#A3E6D3'}}>@{other?.username || 'member'}</span></small></button></div><div className="chat-header-actions"><span className="header-divider"/><button className="icon-button" onClick={() => setShowWallpaper(true)} title="Chat wallpaper"><Image size={18}/></button><button className="icon-button" onClick={() => setShowDetails(v => !v)} title="Conversation details"><Info size={18}/></button></div></header>
+    <div className="chat-body" data-wallpaper={wallpaper?.theme || 'default'} style={wallpaper?.url ? {backgroundImage:`linear-gradient(rgba(5,12,15,.38),rgba(5,12,15,.38)),url("${wallpaper.url}")`,backgroundSize:'cover',backgroundPosition:'center'} : undefined} onClick={() => showDetails && setShowDetails(false)}>
       <div className="day-divider"><span>YOUR CONVERSATION</span></div>
-      {loading ? <div className="messages-loading">Loading messages…</div> : <>{!messages.length && <div className="start-card"><div className="start-avatar"><Avatar profile={other} size="xl"/></div><strong>{other?.display_name || 'Chatter user'}</strong><span>@{other?.username || 'member'}</span>{other?.bio && <p>{other.bio}</p>}<small>This is the beginning of your conversation.</small><button className="text-button" onClick={onOpenProfile}>View profile <ArrowUp size={13}/></button></div>}{messages.map(m => <MessageBubble key={m.id} message={m} mine={m.sender_id === currentProfile?.id}/>)}</>}
+      {loading ? <div className="messages-loading">Loading messages…</div> : <>{!messages.length && <div className="start-card"><div className="start-avatar"><Avatar profile={other} size="xl"/></div><strong>{other?.display_name || 'Chatter user'}</strong><span>@{other?.username || 'member'}</span>{other?.bio && <p>{other.bio}</p>}<small>This is the beginning of your conversation.</small><button className="text-button" onClick={onOpenProfile}>View profile <ArrowUp size={13}/></button></div>}{messages.map(m => <MessageBubble key={m.id} message={m} mine={m.sender_id === currentProfile?.id} onOpenMedia={onOpenMedia}/>)}</>}
       <div ref={endRef}/>
     </div>
     <form className="composer" onSubmit={submit}>
@@ -183,16 +186,63 @@ function ChatPanel({ conversation, other, currentProfile, messages, onSend, onSe
       <input ref={fileInputRef} type="file" hidden accept="image/*,video/mp4,video/webm,image/gif,application/pdf,text/plain" onChange={e=>{chooseFile(e.target.files?.[0]);e.target.value='';}}/>
       <div className="composer-inner"><button type="button" className="composer-tool" title="Attach media (5 MB max)" onClick={()=>fileInputRef.current?.click()}><Paperclip size={19}/></button><textarea ref={inputRef} value={draft} onChange={e => setDraft(e.target.value)} onKeyDown={e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); submit(e); } }} rows={1} placeholder={`Message ${other?.display_name || 'your friend'}…`} maxLength={4000}/><button type="button" className="composer-tool emoji-tool" title="Emoji" onClick={() => setDraft(d => d + ' 😊')}><Smile size={19}/></button><button className="send-button" disabled={(!draft.trim()&&!selectedFile) || sending} title="Send message"><Send size={16}/></button></div><div className="composer-hint"><span>Up to 5 MB · Images, videos, GIFs, PDF, TXT</span><span>{draft.length}/4000</span></div></form>
     {showDetails && <div className="details-popover"><div className="details-banner" style={other?.banner_url ? {backgroundImage:`url(${other.banner_url})`} : {}}/><Avatar profile={other} size="xl"/><h3>{other?.display_name}</h3><span style={{color:other?.username_color || '#A3E6D3'}}>@{other?.username}</span><p>{other?.bio || 'No bio yet.'}</p><button className="text-button" onClick={() => {setShowDetails(false);onOpenProfile();}}>View profile <ArrowUp size={13}/></button></div>}
+    {showWallpaper && <ChatWallpaperModal wallpaper={wallpaper} onClose={() => setShowWallpaper(false)} onSave={async value => { await onSaveWallpaper(value); setShowWallpaper(false); }}/>}
   </main>;
 }
 
-function PublicProfileModal({ profile, onClose }) {
-  return <div className="modal-scrim" onMouseDown={e => e.target === e.currentTarget && onClose()}><div className="public-profile-modal"><button className="icon-button public-close" onClick={onClose}><X size={18}/></button><div className="public-banner" style={profile?.banner_url ? {backgroundImage:`url(${profile.banner_url})`} : {}}/><div className="public-profile-content"><Avatar profile={profile} size="xl"/><h2>{profile?.display_name}</h2><span style={{color:profile?.username_color || '#A3E6D3'}}>@{profile?.username}</span><p>{profile?.bio || 'A Chatter member.'}</p></div></div></div>;
+function PublicProfileModal({ profile, onClose, isOnline }) {
+  return <div className="modal-scrim" onMouseDown={e => e.target === e.currentTarget && onClose()}><div className="public-profile-modal"><button className="icon-button public-close" onClick={onClose}><X size={18}/></button><div className="public-banner" style={profile?.banner_url ? {backgroundImage:`url(${profile.banner_url})`} : {}}/><div className="public-profile-content"><Avatar profile={profile} size="xl"/><h2>{profile?.display_name}</h2><span style={{color:profile?.username_color || '#A3E6D3'}}>@{profile?.username}</span><span className={isOnline?'profile-presence status-online':'profile-presence status-offline'}><i className={isOnline?'online-dot':'offline-dot'}/>{isOnline?'Online':'Offline'}</span><p>{profile?.bio || 'A Chatter member.'}</p></div></div></div>;
 }
 
+function MediaViewer({ media, onClose }) {
+  useEffect(() => {
+    if (!media) return;
+    const onKey = event => { if (event.key === 'Escape') onClose(); };
+    window.addEventListener('keydown', onKey);
+    const previous = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+    return () => { window.removeEventListener('keydown', onKey); document.body.style.overflow = previous; };
+  }, [media, onClose]);
+  if (!media) return null;
+  return <div className="media-viewer" role="dialog" aria-modal="true" aria-label={media.name || 'Media preview'} onMouseDown={event => event.target === event.currentTarget && onClose()}>
+    <button className="media-viewer-close" onClick={onClose} aria-label="Close media viewer"><X size={22}/></button>
+    <div className="media-viewer-stage">
+      {media.type === 'video' ? <video src={media.src} controls autoPlay playsInline/> : <img src={media.src} alt={media.name || 'Photo'}/>}
+      {media.name && <span className="media-viewer-name">{media.name}</span>}
+    </div>
+  </div>;
+}
 
-function PostCard({ post }) {
+function ChatWallpaperModal({ wallpaper, onClose, onSave }) {
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState('');
+  const fileRef = useRef(null);
+  const choices = [
+    ['default','Classic','#102126'],['midnight','Midnight','#111827'],['forest','Forest','#16372f'],
+    ['dusk','Dusk','#32233d'],['rose','Rose','#3a2633'],['paper','Paper','#e9e4d8']
+  ];
+  const save = async value => {
+    setBusy(true); setError('');
+    try { await onSave(value); }
+    catch (caught) { setError(caught?.message || 'Could not save this wallpaper.'); }
+    finally { setBusy(false); }
+  };
+  return <div className="modal-scrim" onMouseDown={event => event.target === event.currentTarget && !busy && onClose()}>
+    <section className="chat-wallpaper-modal">
+      <div className="modal-top"><div><span className="eyebrow">MAKE IT YOURS</span><h2>Chat wallpaper</h2></div><button className="icon-button" onClick={onClose} disabled={busy}><X size={18}/></button></div>
+      <p>Choose a background for this conversation. It syncs with your account on other devices.</p>
+      <div className="wallpaper-choice-grid">{choices.map(([id,label,color])=><button key={id} className={wallpaper?.theme===id?'selected':''} onClick={()=>save({theme:id})} disabled={busy}><span style={{background:color}}/><b>{label}</b></button>)}</div>
+      <button className="wallpaper-upload" onClick={()=>fileRef.current?.click()} disabled={busy}><ImagePlus size={17}/>{busy?'Saving…':'Use a photo from your device'}</button>
+      <input ref={fileRef} type="file" accept="image/*" hidden onChange={event=>{const file=event.target.files?.[0];event.target.value='';if(file)save({file});}}/>
+      {error&&<div className="form-error">{error}</div>}
+    </section>
+  </div>;
+}
+
+function PostCard({ post, onOpenMedia }) {
   const author = post.author || {};
+  const image = post.media_type?.startsWith('image/');
+  const video = post.media_type?.startsWith('video/');
   return <article className="post-card">
     <div className="post-card-head">
       <Avatar profile={author} size="md"/>
@@ -201,57 +251,73 @@ function PostCard({ post }) {
         <small><span style={{color:author.username_color || '#A3E6D3'}}>@{author.username || 'member'}</span><span className="post-dot">·</span><time dateTime={post.created_at} title={fullTime(post.created_at)}>{timeLabel(post.created_at)}</time></small>
       </div>
     </div>
-    <p className="post-content">{post.content}</p>
+    {post.content && <p className="post-content">{post.content}</p>}
+    {post.media_url && image && <button type="button" className="post-media-open media-open-button" onClick={()=>onOpenMedia?.({src:post.media_url,type:'image',name:post.media_name})}><img className="post-media-preview" src={post.media_url} alt={post.media_name || 'Post image'}/></button>}
+    {post.media_url && video && <button type="button" className="post-media-open post-video-open media-open-button" onClick={()=>onOpenMedia?.({src:post.media_url,type:'video',name:post.media_name})}><video className="post-media-preview" src={post.media_url} muted playsInline preload="metadata"/><span className="media-play-mark">▶</span></button>}
   </article>;
 }
 
-function PostFeed({ posts, loading }) {
+function PostFeed({ posts, loading, onOpenMedia }) {
   if (loading && !posts.length) return <div className="post-feed-state">Loading community posts…</div>;
   if (!posts.length) return <div className="feed-empty-card"><div className="feed-empty-art"><Sparkles size={24}/></div><div><b>Your feed is ready for good moments.</b><p>There are no updates yet. Start the conversation by sharing the first post.</p></div></div>;
-  return <div className="post-feed">{posts.map(post => <PostCard key={post.id} post={post}/>)}</div>;
+  return <div className="post-feed">{posts.map(post => <PostCard key={post.id} post={post} onOpenMedia={onOpenMedia}/>)}</div>;
 }
 
-function HomeDashboard({ profile, conversations, profiles, posts, loadingPosts, onOpenChats, onNewChat, onEditProfile, onCreate }) {
+function HomeDashboard({ profile, conversations, profiles, posts, loadingPosts, onOpenChats, onNewChat, onEditProfile, onCreate, onOpenMedia, onViewPosts }) {
   const recent = conversations.slice(0, 3);
   return <section className="home-dashboard">
     <div className="home-welcome"><div><span className="eyebrow">YOUR SPACE, YOUR PEOPLE</span><h1>Good to see you, <em>{profile?.display_name?.split(' ')[0] || 'friend'}.</em></h1><p>A little hello can make someone's day.</p></div><div className="welcome-orb"><MessageCircle size={31}/><span>✦</span></div></div>
     <div className="home-quick-actions"><button className="quick-action primary" onClick={onNewChat}><span><Plus size={19}/></span><b>New chat</b><small>Say hello to someone</small></button><button className="quick-action" onClick={onOpenChats}><span><MessageSquare size={19}/></span><b>Messages</b><small>Pick up where you left off</small></button><button className="quick-action" onClick={onEditProfile}><span><UserCircle size={19}/></span><b>Your profile</b><small>Make it yours</small></button></div>
-    <div className="home-feed-heading"><div><span className="eyebrow">YOUR COMMUNITY</span><h2>Your feed</h2><p>Little updates from the people you care about.</p></div><button className="primary-button" onClick={onCreate}><Plus size={15}/> Create a post</button></div>
-    <PostFeed posts={posts} loading={loadingPosts}/>
+    <div className="home-feed-heading"><div><span className="eyebrow">YOUR COMMUNITY</span><h2>Your feed</h2><p>Little updates from the people you care about.</p></div><div className="home-feed-actions"><button className="text-button" onClick={onViewPosts}>View all <ArrowRight size={14}/></button><button className="primary-button" onClick={onCreate}><Plus size={15}/> Create a post</button></div></div>
+    <PostFeed posts={posts.slice(0,3)} loading={loadingPosts} onOpenMedia={onOpenMedia}/>
     <div className="home-section-heading"><div><span className="eyebrow">KEEP IN TOUCH</span><h2>Recent conversations</h2></div><button className="text-button" onClick={onOpenChats}>View all <ArrowRight size={14}/></button></div>
     {recent.length ? <div className="home-recent-list">{recent.map(c => { const person=profiles[c.other_id] || {}; return <button className="home-recent-row" key={c.id} onClick={onOpenChats}><Avatar profile={person} size="lg"/><span><b>{person.display_name || 'Chatter member'}</b><small>{c.last_message?.content || 'Start a conversation'}</small></span><time>{timeLabel(c.last_message?.created_at || c.updated_at)}</time><ArrowRight size={15}/></button>; })}</div> : <div className="home-empty"><div className="empty-icon"><MessageCircle size={21}/></div><b>Your conversations start here</b><p>Find a friend and start your first Chatter conversation.</p><button className="primary-button" onClick={onNewChat}>Find people <ArrowRight size={15}/></button></div>}
     <div className="home-note"><div className="home-note-icon"><ShieldCheck size={18}/></div><div><b>A calmer corner of the internet.</b><p>Chatter is made for meaningful conversations, without the noise.</p></div></div>
   </section>;
 }
 
-function CreateDashboard({ profile, posts, loadingPosts, onCreatePost, onNewChat }) {
+function PostDashboard({ profile, posts, loadingPosts, onCreatePost, onOpenMedia, onNewChat }) {
   const [content, setContent] = useState('');
+  const [selectedMedia, setSelectedMedia] = useState(null);
+  const [previewUrl, setPreviewUrl] = useState('');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
+  const fileRef = useRef(null);
+  const chooseMedia = file => {
+    if (!file) return;
+    if (!file.type.startsWith('image/') && !file.type.startsWith('video/')) { setError('Choose an image or video.'); return; }
+    if (file.size > 30*1024*1024) { setError('Posts support media up to 30 MB.'); return; }
+    setSelectedMedia(file);
+    setPreviewUrl(URL.createObjectURL(file));
+    setError('');
+  };
+  const clearMedia = () => { if(previewUrl) URL.revokeObjectURL(previewUrl); setPreviewUrl(''); setSelectedMedia(null); };
   const submit = async event => {
     event.preventDefault();
     const cleaned = content.trim();
-    if (!cleaned || busy) return;
+    if ((!cleaned && !selectedMedia) || busy) return;
     setBusy(true); setError('');
-    try { await onCreatePost(cleaned); setContent(''); }
+    try { await onCreatePost(cleaned, selectedMedia); setContent(''); clearMedia(); }
     catch (caught) { setError(caught?.message || 'Could not publish your post.'); }
     finally { setBusy(false); }
   };
   return <section className="simple-dashboard create-dashboard">
-    <span className="eyebrow">SHARE SOMETHING</span>
-    <h1>Make a <em>post.</em></h1>
-    <p>Share a small update with everyone in your Chatter community.</p>
+    <span className="eyebrow">YOUR COMMUNITY</span>
+    <h1>Community <em>posts.</em></h1>
+    <p>Share text, photos and videos with everyone in your Chatter community.</p>
     <form className="post-composer" onSubmit={submit}>
       <div className="post-composer-head"><Avatar profile={profile} size="md"/><span>Posting as <b>{profile?.display_name || 'you'}</b></span></div>
-      <textarea value={content} onChange={event => setContent(event.target.value)} maxLength={1000} rows={5} placeholder="What's happening? Share an update…" aria-label="Write a post"/>
-      <div className="post-composer-footer"><span>{content.length}/1000</span><button type="submit" className="primary-button" disabled={!content.trim() || busy}>{busy ? 'Publishing…' : 'Publish post'}<ArrowUp size={15}/></button></div>
+      <textarea value={content} onChange={event => setContent(event.target.value)} maxLength={1000} rows={4} placeholder="What's happening? Share an update…" aria-label="Write a post"/>
+      {selectedMedia && <div className="post-composer-media">{selectedMedia.type.startsWith('image/') ? <img src={previewUrl} alt="Post preview"/> : <video src={previewUrl} controls playsInline/>}<span>{selectedMedia.name} · {(selectedMedia.size/1024/1024).toFixed(1)} MB</span><button type="button" className="icon-button" onClick={clearMedia} aria-label="Remove attachment"><X size={16}/></button></div>}
+      <div className="post-composer-footer"><span>{content.length}/1000 · {selectedMedia ? '1 attachment' : 'No attachment'}</span><div><input ref={fileRef} type="file" hidden accept="image/*,video/mp4,video/webm,video/quicktime" onChange={event=>{chooseMedia(event.target.files?.[0]);event.target.value='';}}/><button type="button" className="composer-tool" onClick={()=>fileRef.current?.click()} title="Attach a photo or video"><ImagePlus size={18}/></button><button type="submit" className="primary-button" disabled={(!content.trim()&&!selectedMedia)||busy}>{busy ? 'Publishing…' : 'Publish post'}<ArrowUp size={15}/></button></div></div>
       {error && <div className="form-error" role="alert">{error}</div>}
     </form>
-    <div className="create-feed-heading"><span className="eyebrow">COMMUNITY UPDATES</span><h2>Recent posts</h2></div>
-    <PostFeed posts={posts} loading={loadingPosts}/>
+    <div className="create-feed-heading"><span className="eyebrow">LATEST UPDATES</span><h2>Community feed</h2></div>
+    <PostFeed posts={posts} loading={loadingPosts} onOpenMedia={onOpenMedia}/>
     <button className="text-button create-chat-link" onClick={onNewChat}><MessageSquare size={15}/> Start a conversation instead</button>
   </section>;
 }
+
 function App() {
   const [session, setSession] = useState(null);
   const [authLoading, setAuthLoading] = useState(true);
@@ -260,7 +326,7 @@ function App() {
   const [profiles, setProfiles] = useState({});
   const [conversations, setConversations] = useState([]);
   const [posts, setPosts] = useState([]);
-  const [loadingPosts, setLoadingPosts] = useState(false);
+  const [loadingPosts, setLoadingPosts] = useState(false);\n  const [mediaViewer, setMediaViewer] = useState(null);\n  const [chatWallpaper, setChatWallpaper] = useState({ theme: 'default', path: null, url: null });
   const [active, setActive] = useState(null);
   const [messages, setMessages] = useState([]);
   const [loadingChats, setLoadingChats] = useState(false);
@@ -352,11 +418,16 @@ function App() {
     if (showLoader) setLoadingPosts(true);
     try {
       const { data, error } = await supabase.from('posts')
-        .select('id,author_id,content,created_at,author:profiles!posts_author_id_fkey(id,display_name,username,avatar_url,username_color)')
+        .select('id,author_id,content,created_at,media_path,media_type,media_name,media_size,author:profiles!posts_author_id_fkey(id,display_name,username,avatar_url,username_color)')
         .order('created_at', { ascending: false })
         .limit(50);
       if (error) throw error;
-      setPosts(data || []);
+      const hydrated = await Promise.all((data || []).map(async post => {
+        if (!post.media_path) return { ...post, media_url: null };
+        const { data: signed } = await supabase.storage.from('post-media').createSignedUrl(post.media_path, 3600);
+        return { ...post, media_url: signed?.signedUrl || null };
+      }));
+      setPosts(hydrated);
     } catch (error) {
       console.error('Could not load Chatter posts:', error);
       notify('Could not load community posts.');
@@ -415,12 +486,29 @@ function App() {
   }, [profile?.id, loadPosts]);
 
   useEffect(() => {
+    if (!profile?.id || !supabase) return;
+    const channel = supabase.channel('chatter:profiles')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'profiles' }, payload => {
+        const nextProfile = payload.new;
+        if (!nextProfile?.id) return;
+        setProfiles(current => ({ ...current, [nextProfile.id]: { ...current[nextProfile.id], ...nextProfile } }));
+        setProfile(current => current?.id === nextProfile.id ? { ...current, ...nextProfile } : current);
+        setViewProfile(current => current?.id === nextProfile.id ? { ...current, ...nextProfile } : current);
+        loadPosts(false);
+      })
+      .subscribe();
+    return () => { supabase.removeChannel(channel); };
+  }, [profile?.id, loadPosts]);
+
+  useEffect(() => {
     let cancelled = false;
     if (!profile?.id || !supabase) { setIsAdmin(false); return; }
     supabase.from('chatter_admins').select('user_id').eq('user_id', profile.id).maybeSingle()
       .then(({ data, error }) => { if (!cancelled) setIsAdmin(!error && Boolean(data)); });
     return () => { cancelled = true; };
   }, [profile?.id]);
+
+  const onlineUserIds = useMemo(() => new Set(onlineUsers.map(user => user.user_id)), [onlineUsers]);
 
   useEffect(() => {
     if (!profile?.id || !supabase) { setOnlineUsers([]); return; }
@@ -459,6 +547,26 @@ function App() {
     const channel = supabase.channel(`inbox:${profile.id}`).on('postgres_changes', {event:'*', schema:'public', table:'messages'}, () => loadConversations(profile.id, false)).on('postgres_changes', {event:'*', schema:'public', table:'conversation_members', filter:`user_id=eq.${profile.id}`}, () => loadConversations(profile.id, false)).subscribe();
     return () => { supabase.removeChannel(channel); };
   }, [profile?.id, loadConversations]);
+
+  useEffect(() => {
+    let alive = true;
+    if (!active?.id || !profile?.id) { setChatWallpaper({ theme: 'default', path: null, url: null }); return; }
+    setChatWallpaper({ theme: 'default', path: null, url: null });
+    (async () => {
+      const { data, error } = await supabase.from('conversation_members')
+        .select('chat_background,chat_background_path')
+        .eq('conversation_id', active.id).eq('user_id', profile.id).maybeSingle();
+      if (error) { console.warn('Could not load chat wallpaper:', error); return; }
+      if (!alive || !data) return;
+      let url = null;
+      if (data.chat_background_path) {
+        const { data: signed } = await supabase.storage.from('chat-media').createSignedUrl(data.chat_background_path, 3600);
+        url = signed?.signedUrl || null;
+      }
+      if (alive) setChatWallpaper({ theme: data.chat_background || 'default', path: data.chat_background_path || null, url });
+    })();
+    return () => { alive = false; };
+  }, [active?.id, profile?.id]);
 
   useEffect(() => {
     if (!active?.id) { setMessages([]); return; }
@@ -518,9 +626,34 @@ function App() {
     loadConversations(profile.id, false);
   };
 
-  const createPost = async content => {
-    const { error } = await supabase.from('posts').insert({ author_id: profile.id, content: content.trim() });
-    if (error) throw error;
+  const createPost = async (content, media) => {
+    const cleaned = (content || '').trim();
+    if (!cleaned && !media) throw new Error('Write something or attach a photo/video.');
+    let chosen = media || null;
+    if (chosen && chosen.type.startsWith('image/') && chosen.type !== 'image/gif' && localStorage.getItem('chatter-compress-media') !== 'false') {
+      try {
+        const smaller = await compressImage(chosen, 1920, .82);
+        if (smaller.size < chosen.size) chosen = smaller;
+      } catch {}
+    }
+    if (chosen && chosen.size > 30 * 1024 * 1024) throw new Error('Post media must be 30 MB or smaller.');
+    let mediaPath = null;
+    if (chosen) {
+      const ext = (chosen.name.split('.').pop() || 'bin').toLowerCase();
+      mediaPath = `${profile.id}/posts/${Date.now()}-${crypto.randomUUID()}.${ext}`;
+      const { error: uploadError } = await supabase.storage.from('post-media').upload(mediaPath, chosen, {
+        contentType: chosen.type, cacheControl: '3600', upsert: false
+      });
+      if (uploadError) throw uploadError;
+    }
+    const { error } = await supabase.from('posts').insert({
+      author_id: profile.id, content: cleaned, media_path: mediaPath,
+      media_type: chosen?.type || null, media_name: chosen?.name || null, media_size: chosen?.size || null
+    });
+    if (error) {
+      if (mediaPath) await supabase.storage.from('post-media').remove([mediaPath]);
+      throw error;
+    }
     await loadPosts(false);
     notify('Your post is live.');
   };
@@ -548,7 +681,8 @@ function App() {
     const upload = async (file, kind) => {
       if (!file) return null;
       if (kind==='avatar' && changes.compressMedia && file.type.startsWith('image/')) file=await compressAvatarImage(file);
-      if (file.size>5*1024*1024) throw new Error('Profile images must be 5 MB or smaller.');
+      else if (kind==='banner' && changes.compressMedia && file.type.startsWith('image/') && file.type !== 'image/gif') file=await compressImage(file, 1800, .82);
+      if (file.size>5*1024*1024) throw new Error('Profile images must be 5 MB or smaller after compression.');
       const ext = (file.name.split('.').pop() || 'jpg').toLowerCase();
       const path = `${profile.id}/${kind}-${Date.now()}.${ext}`;
       const { error } = await supabase.storage.from('profile-media').upload(path, file, { contentType:file.type, cacheControl:'3600', upsert:false });
@@ -563,6 +697,39 @@ function App() {
     setProfile(data); setProfiles(prev => ({...prev,[data.id]:data})); notify('Profile updated.');
   };
 
+  const saveChatWallpaper = async ({ theme = 'default', file = null }) => {
+    if (!active?.id || !profile?.id) throw new Error('Open a conversation first.');
+    let path = null;
+    if (file) {
+      if (!file.type.startsWith('image/')) throw new Error('Choose an image for your chat wallpaper.');
+      let chosen = file;
+      if (chosen.type !== 'image/gif') {
+        try { const smaller = await compressImage(chosen, 1600, .8); if (smaller.size < chosen.size) chosen = smaller; } catch {}
+      }
+      if (chosen.size > 5 * 1024 * 1024) throw new Error('Wallpaper images must be 5 MB or smaller.');
+      const ext = (chosen.name.split('.').pop() || 'jpg').toLowerCase();
+      path = `${profile.id}/${active.id}/wallpaper-${Date.now()}.${ext}`;
+      const { error: uploadError } = await supabase.storage.from('chat-media').upload(path, chosen, { contentType: chosen.type, cacheControl: '3600', upsert: false });
+      if (uploadError) throw uploadError;
+      theme = 'custom';
+    }
+    const { error } = await supabase.from('conversation_members').update({
+      chat_background: theme, chat_background_path: path
+    }).eq('conversation_id', active.id).eq('user_id', profile.id);
+    if (error) {
+      if (path) await supabase.storage.from('chat-media').remove([path]);
+      throw error;
+    }
+    let url = null;
+    if (path) {
+      const { data: signed, error: signedError } = await supabase.storage.from('chat-media').createSignedUrl(path, 3600);
+      if (signedError) throw signedError;
+      url = signed?.signedUrl || null;
+    }
+    setChatWallpaper({ theme, path, url });
+    notify('Chat wallpaper updated.');
+  };
+
   const signOut = async () => { await supabase.auth.signOut(); setShowProfile(false); setActive(null); setMobileChatOpen(false); };
 
   if (!isSupabaseConfigured) return <div className="setup-screen"><div className="setup-card"><div className="brand-mark"><MessageCircle size={23} fill="currentColor"/><span>chatter</span><i/></div><span className="eyebrow">ALMOST READY</span><h1>Connect your<br/><em>Supabase project.</em></h1><p>This app is ready for a Supabase backend. Add your project URL and publishable key to the environment file to turn on sign-in, profiles, and live messaging.</p><div className="setup-steps"><div><b>01</b><span>Create a Supabase project</span></div><div><b>02</b><span>Run <code>supabase/schema.sql</code></span></div><div><b>03</b><span>Copy values into <code>.env.local</code></span></div></div><div className="setup-note"><Info size={15}/> Never put your Supabase service-role key in this frontend.</div></div></div>;
@@ -573,16 +740,16 @@ function App() {
 
   const openNewChat = async () => { const {data,error}=await supabase.from('profiles').select('*').order('display_name').limit(100); if(error) notify(error.message); else {setProfiles(prev=>({...prev,...Object.fromEntries((data||[]).map(p=>[p.id,p]))}));setShowNewChat(true);} };
   const openConversation = c => { setActive(c); setMobileChatOpen(true); setActiveTab('chats'); };
-  const tabs = [{id:'home',label:'Home',icon:Home},{id:'chats',label:'Chats',icon:MessageSquare},{id:'create',label:'Create',icon:PlusCircle},{id:'appearance',label:'Appearance',icon:Palette},{id:'profile',label:'Profile',icon:UserCircle},...(isAdmin?[{id:'admin',label:'Admin',icon:Shield}]:[])];
+  const tabs = [{id:'home',label:'Home',icon:Home},{id:'chats',label:'Chats',icon:MessageSquare},{id:'posts',label:'Posts',icon:Newspaper},{id:'appearance',label:'Appearance',icon:Palette},{id:'profile',label:'Profile',icon:UserCircle},...(isAdmin?[{id:'admin',label:'Admin',icon:Shield}]:[])];
   return <div className={`chatter-app ${lightMode ? 'light-mode' : ''} ${appearance.motion==='off'?'no-motion':''}`}
     data-density={appearance.density} data-wallpaper={appearance.wallpaper} data-bubble-style={appearance.bubbleStyle} data-font={appearance.font}
     style={{'--mint':accent.primary,'--mint2':accent.strong,'--mint-dim':accent.dim}}>
     <header className="app-topbar"><button className="topbar-brand" onClick={()=>{setActiveTab('home');setMobileChatOpen(false);}}><span className="brand-symbol"><MessageCircle size={17} fill="currentColor"/></span><b>chatter</b><i>YOUR SPACE</i></button><div className="topbar-search"><Search size={17}/><input value={search} onChange={e=>setSearch(e.target.value)} placeholder="Search conversations and people"/><kbd>⌘ K</kbd></div><div className="topbar-actions"><button className="icon-button" title="Notifications" onClick={()=>notify('You’re all caught up.')}><Bell size={18}/></button><button className="icon-button" title={lightMode?'Switch to dark mode':'Switch to light mode'} onClick={()=>setAppearance(v=>({...v,theme:lightMode?'dark':'light'}))}>{lightMode?<Moon size={18}/>:<Sun size={18}/>}</button><button className="topbar-profile" onClick={()=>setActiveTab('profile')}><Avatar profile={profile} size="sm"/></button></div></header>
     <div className="app-content"><nav className="desktop-nav">{tabs.map(t=><button key={t.id} className={activeTab===t.id?'active':''} onClick={()=>{setActiveTab(t.id);setMobileChatOpen(false);}}><t.icon size={18}/><span>{t.label}</span>{t.id==='chats'&&conversations.some(c=>c.unread_count>0)&&<i/>}</button>)}<div className="desktop-nav-foot"><ShieldCheck size={15}/><span>Private by design</span></div></nav>
       <main className="app-main">
-        {activeTab==='home'&&<HomeDashboard profile={profile} conversations={conversations} profiles={profiles} posts={posts} loadingPosts={loadingPosts} onOpenChats={()=>setActiveTab('chats')} onNewChat={openNewChat} onEditProfile={()=>setActiveTab('profile')} onCreate={()=>setActiveTab('create')}/>}
-        {activeTab==='chats'&&<div className={`chat-workspace ${mobileChatOpen?'mobile-open':''}`}><ChatList conversations={conversations} activeId={active?.id} onSelect={openConversation} profiles={profiles} currentProfile={profile} onNewChat={openNewChat} onEditProfile={()=>setActiveTab('profile')} search={search} setSearch={setSearch} loading={loadingChats}/><div className={`main-stage ${mobileChatOpen?'mobile-open':''}`}><ChatPanel conversation={active} other={activeOther} currentProfile={profile} messages={messages} onSend={sendMessage} onSendFile={sendAttachment} loading={loadingMessages} isMobile={mobileChatOpen} onBack={()=>setMobileChatOpen(false)} onOpenProfile={()=>activeOther&&setViewProfile(activeOther)}/></div></div>}
-        {activeTab==='create'&&<CreateDashboard profile={profile} posts={posts} loadingPosts={loadingPosts} onCreatePost={createPost} onNewChat={openNewChat}/>}
+        {activeTab==='home'&&<HomeDashboard profile={profile} conversations={conversations} profiles={profiles} posts={posts} loadingPosts={loadingPosts} onOpenChats={()=>setActiveTab('chats')} onNewChat={openNewChat} onEditProfile={()=>setActiveTab('profile')} onCreate={()=>setActiveTab('posts')} onViewPosts={()=>setActiveTab('posts')} onOpenMedia={setMediaViewer}/>} 
+        {activeTab==='chats'&&<div className={`chat-workspace ${mobileChatOpen?'mobile-open':''}`}><ChatList conversations={conversations} activeId={active?.id} onSelect={openConversation} profiles={profiles} currentProfile={profile} onlineUserIds={onlineUserIds} onNewChat={openNewChat} onEditProfile={()=>setActiveTab('profile')} search={search} setSearch={setSearch} loading={loadingChats}/><div className={`main-stage ${mobileChatOpen?'mobile-open':''}`}><ChatPanel conversation={active} other={activeOther} currentProfile={profile} messages={messages} onSend={sendMessage} onSendFile={sendAttachment} loading={loadingMessages} isMobile={mobileChatOpen} onBack={()=>setMobileChatOpen(false)} onOpenProfile={()=>activeOther&&setViewProfile(activeOther)} onOpenMedia={setMediaViewer} onlineUserIds={onlineUserIds} wallpaper={chatWallpaper} onSaveWallpaper={saveChatWallpaper}/></div></div>}
+        {activeTab==='posts'&&<PostDashboard profile={profile} posts={posts} loadingPosts={loadingPosts} onCreatePost={createPost} onOpenMedia={setMediaViewer} onNewChat={openNewChat}/>} 
         {activeTab==='appearance'&&<AppearanceDashboard appearance={appearance} onChange={setAppearance} onReset={()=>{setAppearance(DEFAULT_APPEARANCE);notify('Appearance reset for this browser.');}}/>}
         {activeTab==='admin'&&isAdmin&&<AdminDashboard onlineUsers={onlineUsers} currentUserId={profile?.id} onNotify={notify}/>}
         {activeTab==='profile'&&<section className="profile-dashboard"><span className="eyebrow">YOUR ACCOUNT</span><h1>Your <em>profile.</em></h1><div className="profile-dashboard-card"><div className="profile-dashboard-banner" style={profile?.banner_url?{backgroundImage:`url(${profile.banner_url})`}:{}}/><div className="profile-dashboard-info"><Avatar profile={profile} size="xl"/><div><h2>{profile?.display_name}</h2><span style={{color:profile?.username_color || '#A3E6D3'}}>@{profile?.username}</span><p>{profile?.bio||'Add a little about yourself.'}</p></div><button className="primary-button" onClick={()=>setShowProfile(true)}><Settings size={15}/> Edit profile</button></div></div><button className="profile-signout" onClick={signOut}><LogOut size={16}/> Sign out</button></section>}
@@ -590,9 +757,9 @@ function App() {
     <nav className="mobile-bottom-nav">{tabs.map(t=><button key={t.id} className={activeTab===t.id?'active':''} onClick={()=>{setActiveTab(t.id);setMobileChatOpen(false);}}><t.icon size={20}/><span>{t.label}</span></button>)}</nav>
     {showProfile&&<ProfileModal profile={profile} onClose={()=>setShowProfile(false)} onSave={saveProfile} onSignOut={signOut}/>}
     {showPasswordRecovery&&<PasswordRecoveryModal onClose={()=>setShowPasswordRecovery(false)} onNotify={notify}/>}
-    {showNewChat&&<NewChatModal profiles={allProfiles} currentUserId={profile.id} onClose={()=>setShowNewChat(false)} onStart={startConversation}/>}
-    {viewProfile&&<PublicProfileModal profile={viewProfile} onClose={()=>setViewProfile(null)}/>}
-    {toast&&<div className="toast"><CheckCircle2 size={16}/>{toast}</div>}
+    {showNewChat&&<NewChatModal profiles={allProfiles} currentUserId={profile.id} onlineUserIds={onlineUserIds} onClose={()=>setShowNewChat(false)} onStart={startConversation}/>}
+    {viewProfile&&<PublicProfileModal profile={viewProfile} onClose={()=>setViewProfile(null)} isOnline={onlineUserIds.has(viewProfile.id)}/>}
+    {mediaViewer&&<MediaViewer media={mediaViewer} onClose={()=>setMediaViewer(null)}/>}\n    {toast&&<div className="toast"><CheckCircle2 size={16}/>{toast}</div>}
   </div>;
 }
 
