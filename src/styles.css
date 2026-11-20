@@ -373,3 +373,271 @@ button,.primary-button,.icon-button,.quick-action,.chat-row{transition:transform
 @media (hover: none) {
   .chatter-app .message-react-trigger { opacity: .82; }
 }
+
+
+/* Inline video player: embedded by default, fullscreen only on explicit request. */
+.inline-video-player {
+  position: relative;
+  width: 100%;
+  max-width: 100%;
+  overflow: hidden;
+  border: 1px solid rgba(150, 194, 178, .2);
+  border-radius: 13px;
+  background: #030809;
+  isolation: isolate;
+}
+.inline-video-player:fullscreen {
+  width: 100vw;
+  height: 100vh;
+  max-width: none;
+  border: 0;
+  border-radius: 0;
+  display: grid;
+  place-items: center;
+}
+.inline-video-element {
+  display: block;
+  width: 100%;
+  max-height: 440px;
+  aspect-ratio: 16 / 9;
+  object-fit: contain;
+  background: #030809;
+  cursor: pointer;
+}
+.inline-video-player:fullscreen .inline-video-element {
+  max-height: 100vh;
+  height: 100vh;
+}
+.inline-video-center-play {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: 54px;
+  height: 54px;
+  display: grid;
+  place-items: center;
+  padding: 0;
+  transform: translate(-50%, -50%);
+  border: 1px solid rgba(255,255,255,.3);
+  border-radius: 50%;
+  background: rgba(7,15,18,.78);
+  color: #fff;
+  cursor: pointer;
+}
+.inline-video-center-play:active { transform: translate(-50%, -50%) scale(.95); }
+.inline-video-controls {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 42px;
+  padding: 5px 9px;
+  background: linear-gradient(180deg, rgba(4,10,12,.82), rgba(4,10,12,.98));
+  color: #f3f8f5;
+}
+.inline-video-controls button {
+  width: 27px;
+  height: 27px;
+  min-width: 27px;
+  display: grid;
+  place-items: center;
+  padding: 0;
+  border: 0;
+  border-radius: 7px;
+  background: transparent;
+  color: inherit;
+  cursor: pointer;
+}
+.inline-video-controls button:hover { background: rgba(255,255,255,.13); }
+.inline-video-time {
+  flex: none;
+  color: #d2dfd8;
+  font-size: 9px;
+  font-variant-numeric: tabular-nums;
+}
+.inline-video-seek,.inline-video-volume { min-width: 0; accent-color: #a3e6d3; cursor: pointer; }
+.inline-video-seek { flex: 1; }
+.inline-video-volume { width: 62px; }
+.message-inline-player { width: min(370px, 68vw); }
+.post-inline-player { width: 100%; margin-top: 13px; }
+.post-inline-player .inline-video-element { max-height: 470px; }
+@media(max-width:600px) {
+  .inline-video-controls { gap: 5px; min-height: 39px; padding: 4px 6px; }
+  .inline-video-volume { width: 42px; }
+  .inline-video-time { font-size: 8px; }
+  .message-inline-player { width: min(290px, 76vw); }
+}
+@media(prefers-reduced-motion:reduce) {
+  .inline-video-player * { transition: none !important; }
+}
+
+/* Compact Discord/WhatsApp-inspired reaction chips and an anchored React action. */
+.chatter-app .message-reaction-row {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px;
+  min-height: 0;
+  margin: 7px 0 2px;
+}
+.chatter-app .message-reactions {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 5px;
+  margin: 0;
+}
+.chatter-app .message-reactions button {
+  min-width: 38px;
+  min-height: 28px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
+  padding: 3px 8px;
+  border: 1px solid rgba(132,158,148,.28);
+  border-radius: 999px;
+  background: rgba(126,151,141,.09);
+  color: inherit;
+  line-height: 1;
+  box-shadow: none;
+}
+.chatter-app .message-reactions button:hover {
+  border-color: color-mix(in srgb, var(--mint) 65%, transparent);
+  background: rgba(120,175,153,.16);
+  transform: translateY(-1px);
+}
+.chatter-app .message-reactions button.selected {
+  border-color: color-mix(in srgb, var(--mint) 75%, transparent);
+  background: color-mix(in srgb, var(--mint) 18%, transparent);
+  color: var(--mint);
+}
+.chatter-app .message-reactions .reaction-emoji { font-size: 15px; }
+.chatter-app .message-reactions .reaction-count { font-size: 10px; font-weight: 750; }
+.chatter-app .message-reaction-picker-wrap {
+  position: relative;
+  display: inline-flex;
+  flex: none;
+}
+.chatter-app .message-react-trigger {
+  width: auto !important;
+  min-width: 65px;
+  height: 28px !important;
+  display: inline-flex !important;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
+  padding: 0 9px !important;
+  border: 1px solid rgba(132,158,148,.24) !important;
+  border-radius: 999px !important;
+  background: rgba(126,151,141,.07) !important;
+  color: var(--sub);
+  font-size: 10px;
+  font-weight: 700;
+  opacity: .82;
+}
+.chatter-app .message-react-trigger:hover,.chatter-app .message-react-trigger[aria-expanded="true"] {
+  border-color: color-mix(in srgb, var(--mint) 60%, transparent) !important;
+  background: color-mix(in srgb, var(--mint) 13%, transparent) !important;
+  color: var(--mint);
+  opacity: 1;
+}
+.chatter-app .message-reaction-popover {
+  position: absolute;
+  z-index: 30;
+  left: 0;
+  right: auto;
+  bottom: calc(100% + 7px);
+  display: grid;
+  grid-template-columns: repeat(6, 34px);
+  gap: 3px;
+  width: max-content;
+  max-width: min(230px, 78vw);
+  padding: 7px;
+  border: 1px solid var(--edge);
+  border-radius: 13px;
+  background: var(--surface);
+  box-shadow: 0 14px 38px rgba(0,0,0,.32);
+}
+.chatter-app .message-reaction-popover button {
+  width: 34px;
+  height: 34px;
+  min-width: 34px;
+  display: grid;
+  place-items: center;
+  border: 0;
+  border-radius: 9px;
+  background: transparent;
+  font-size: 19px;
+}
+.chatter-app .message-reaction-popover button:hover { background: var(--surface2); transform: scale(1.08); }
+.chatter-app .message-meta { margin-top: 5px; }
+@media(hover:hover) {
+  .chatter-app .message-reaction-row .message-react-trigger { opacity: 0; }
+  .chatter-app .message-line:hover .message-react-trigger,
+  .chatter-app .message-reaction-row .message-react-trigger[aria-expanded="true"] { opacity: 1; }
+}
+@media(hover:none) {
+  .chatter-app .message-reaction-row .message-react-trigger { opacity: .88; }
+}
+
+/* Comment likes are proper text actions with an obvious selected state. */
+.post-comment-actions-inline { align-items: center; gap: 9px; }
+.comment-like-button {
+  min-height: 25px;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 3px 8px;
+  border: 1px solid transparent;
+  border-radius: 999px;
+  background: transparent;
+  color: var(--sub);
+  font-size: 9px;
+  font-weight: 700;
+  cursor: pointer;
+}
+.comment-like-button b { min-width: 8px; font-size: 9px; font-weight: 800; }
+.comment-like-button:hover { border-color: var(--edge); background: var(--surface2); }
+.comment-like-button.liked { color: #e87999; background: rgba(232,121,153,.09); }
+.comment-reply-button { color: var(--sub); font-size: 9px; }
+
+/* Additional appearance controls. */
+.chatter-app .message-bubble { max-width: var(--chat-message-width, 78%); }
+.appearance-preview .preview-bubble { max-width: var(--chat-message-width, 78%); }
+
+/* Public profile card styles selected in the profile editor. */
+.public-profile-content[data-profile-style="glass"] {
+  margin-top: -1px;
+  border: 1px solid rgba(255,255,255,.13);
+  border-radius: 0 0 20px 20px;
+  background: rgba(20,35,38,.82);
+  backdrop-filter: blur(16px);
+}
+.public-profile-content[data-profile-style="minimal"] {
+  margin-top: -1px;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+}
+.profile-dashboard-card[data-profile-style="glass"] { background: rgba(26,45,45,.75); backdrop-filter: blur(12px); }
+.profile-dashboard-card[data-profile-style="minimal"] { background: transparent; border-color: transparent; box-shadow: none; }
+.profile-style-options { display: grid; grid-template-columns: repeat(3,minmax(0,1fr)); gap: 7px; }
+.profile-style-options button {
+  min-height: 37px;
+  padding: 7px 9px;
+  border: 1px solid var(--line);
+  border-radius: 9px;
+  background: transparent;
+  color: var(--muted);
+  font-size: 10px;
+  font-weight: 700;
+}
+.profile-style-options button.selected {
+  border-color: var(--mint);
+  background: var(--mint-dim);
+  color: var(--mint);
+}
+@media(max-width:600px) {
+  .profile-style-options button { padding: 6px 4px; font-size: 9px; }
+}
