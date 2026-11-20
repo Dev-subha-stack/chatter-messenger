@@ -10,13 +10,13 @@ const fail = message => {
 };
 
 const mainSource = await readFile(path.join(root, 'src/main.jsx'), 'utf8');
-if (!/import\\s*\\{\\s*createRoot\\s*\\}\\s*from\\s*['"]react-dom\\/client['"]\\s*;/.test(mainSource)) {
+if (!/import\s*\{\s*createRoot\s*\}\s*from\s*['"]react-dom\/client['"]\s*;/.test(mainSource)) {
   fail("createRoot must be imported from 'react-dom/client'.");
 }
-if (!/import\\s*\\{\\s*createPortal\\s*\\}\\s*from\\s*['"]react-dom['"]\\s*;/.test(mainSource)) {
+if (!/import\s*\{\s*createPortal\s*\}\s*from\s*['"]react-dom['"]\s*;/.test(mainSource)) {
   fail("createPortal must be imported from 'react-dom'.");
 }
-if (/import\\s*\\{[^}]*createRoot[^}]*\\}\\s*from\\s*['"]react-dom['"]/.test(mainSource)) {
+if (/import\s*\{[^}]*createRoot[^}]*\}\s*from\s*['"]react-dom['"]/.test(mainSource)) {
   fail("createRoot was imported from the wrong React package.");
 }
 
@@ -30,14 +30,13 @@ try {
 }
 if (!/<div[^>]+id=["']root["']/.test(html)) fail('Production HTML has no React root element.');
 
-const scriptMatches = [...html.matchAll(/<script[^>]+src=["']([^"']+\\.js)["'][^>]*>/g)];
+const scriptMatches = [...html.matchAll(/<script[^>]+src=["']([^"']+\.js)["'][^>]*>/g)];
 if (!scriptMatches.length) fail('Production HTML does not reference a JavaScript entry bundle.');
-const assetsRoot = path.join(dist, 'assets');
-const jsFiles = (await readdir(assetsRoot)).filter(name => name.endsWith('.js'));
+const jsFiles = (await readdir(path.join(dist, 'assets'))).filter(name => name.endsWith('.js'));
 if (!jsFiles.length) fail('No JavaScript bundles were generated.');
 
 for (const match of scriptMatches) {
-  const assetPath = path.join(dist, match[1].replace(/^\\//, ''));
+  const assetPath = path.join(dist, match[1].replace(/^\//, ''));
   try {
     const info = await stat(assetPath);
     if (!info.isFile() || info.size < 1000) fail(`JavaScript entry bundle is missing or unexpectedly small: ${match[1]}`);
@@ -47,7 +46,7 @@ for (const match of scriptMatches) {
 }
 
 for (const name of jsFiles) {
-  const file = path.join(assetsRoot, name);
+  const file = path.join(dist, 'assets', name);
   const result = spawnSync(process.execPath, ['--check', file], { encoding: 'utf8' });
   if (result.status !== 0) fail(`JavaScript syntax check failed for ${name}: ${result.stderr || result.stdout}`);
 }
