@@ -30,6 +30,8 @@ create table if not exists public.conversation_members (
   user_id uuid not null references public.profiles(id) on delete cascade,
   joined_at timestamptz not null default now(),
   last_read_at timestamptz,
+  chat_background text not null default 'default' check (chat_background in ('default','midnight','forest','dusk','rose','paper','custom')),
+  chat_background_path text,
   primary key (conversation_id, user_id)
 );
 
@@ -50,12 +52,20 @@ create table if not exists public.messages (
 create table if not exists public.posts (
   id uuid primary key default gen_random_uuid(),
   author_id uuid not null references public.profiles(id) on delete cascade,
-  content text not null check (char_length(content) between 1 and 1000),
+  content text not null default '' check (char_length(content) between 0 and 1000),
+  media_path text,
+  media_type text,
+  media_name text,
+  media_size bigint,
   created_at timestamptz not null default now(),
-  updated_at timestamptz not null default now()
+  updated_at timestamptz not null default now(),
+  constraint posts_content_or_media_check check (char_length(content) > 0 or media_path is not null)
 );
 
-create index if not exists posts_created_at_idx on public.posts (created_at desc);\ncreate index if not exists posts_author_created_idx on public.posts (author_id, created_at desc);\ncreate index if not exists messages_conversation_created_idx on public.messages (conversation_id, created_at desc);
+create index if not exists posts_created_at_idx on public.posts (created_at desc);
+create index if not exists posts_author_created_idx on public.posts (author_id, created_at desc);
+create index if not exists posts_author_created_idx on public.posts (author_id, created_at desc);
+create index if not exists messages_conversation_created_idx on public.messages (conversation_id, created_at desc);
 create index if not exists conversation_members_user_idx on public.conversation_members (user_id, conversation_id);
 create index if not exists conversations_updated_idx on public.conversations (updated_at desc);
 
@@ -101,13 +111,15 @@ for each row execute procedure public.touch_chatter_conversation();
 alter table public.profiles enable row level security;
 alter table public.conversations enable row level security;
 alter table public.conversation_members enable row level security;
-alter table public.messages enable row level security;\nalter table public.posts enable row level security;
+alter table public.messages enable row level security;
+alter table public.posts enable row level security;
 
 grant usage on schema public to authenticated;
 grant select, insert, update on public.profiles to authenticated;
 grant select, insert, update, delete on public.conversations to authenticated;
 grant select, insert, update, delete on public.conversation_members to authenticated;
-grant select, insert, update, delete on public.messages to authenticated;\ngrant select, insert, update, delete on public.posts to authenticated;
+grant select, insert, update, delete on public.messages to authenticated;
+grant select, insert, update, delete on public.posts to authenticated;
 
 -- Profiles: discoverable to signed-in members; editable only by their owner.
 drop policy if exists "Profiles readable by signed-in members" on public.profiles;
@@ -127,6 +139,15 @@ drop policy if exists "Authors can update their own posts" on public.posts;
 create policy "Authors can update their own posts" on public.posts for update to authenticated using (author_id = (select auth.uid())) with check (author_id = (select auth.uid()));
 drop policy if exists "Authors can delete their own posts" on public.posts;
 create policy "Authors can delete their own posts" on public.posts for delete to authenticated using (author_id = (select auth.uid()));
+
+-- Post uploads are private and can only be attached to readable community posts.
+insert into storage.buckets (id, name, public, file_size_limit, allowed_mime_types)
+values ('post-media','post-media',false,31457280,array['image/jpeg','image/png','image/webp','image/gif','video/mp4','video/webm','video/quicktime'])
+on conflict (id) do update set public=excluded.public,file_size_limit=excluded.file_size_limit,allowed_mime_types=excluded.allowed_mime_types;
+drop policy if exists "Post authors can upload their own media" on storage.objects;
+create policy "Post authors can upload their own media" on storage.objects for insert to authenticated with check (bucket_id='post-media' and (storage.foldername(name))[1]=(select auth.uid())::text);
+drop policy if exists "Members can read media attached to posts" on storage.objects;
+create policy "Members can read media attached to posts" on storage.objects for select to authenticated using (bucket_id='post-media' and exists (select 1 from public.posts p where p.media_path=storage.objects.name));
 
 -- A participant may change activity metadata, but cannot swap either participant.
 create or replace function public.prevent_chatter_participant_swap()
@@ -205,6 +226,9 @@ do $$ begin
   end if;
   if not exists (select 1 from pg_publication_tables where pubname = 'supabase_realtime' and schemaname = 'public' and tablename = 'posts') then
     alter publication supabase_realtime add table public.posts;
+  end if;
+  if not exists (select 1 from pg_publication_tables where pubname = 'supabase_realtime' and schemaname = 'public' and tablename = 'profiles') then
+    alter publication supabase_realtime add table public.profiles;
   end if;
 end $;
 
