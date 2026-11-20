@@ -1,5 +1,5 @@
-import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { createRoot } from 'react-dom/client';
+import React, { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import { createPortal, createRoot } from 'react-dom';
 import {
   ArrowLeft, ArrowUp, Bell, Check, CheckCheck, ChevronDown, ChevronLeft, CircleHelp,
   ImagePlus, Info, LogOut, MessageCircle, MoreHorizontal, Paperclip, Pencil,
@@ -195,15 +195,24 @@ function MessageBubble({ message, mine, onOpenMedia, onReply, replyMessage, onJu
   const [contextMenu, setContextMenu] = useState(null);
   const [reactionBusy, setReactionBusy] = useState(false);
   const longPressTimerRef = useRef(null);
+  const contextMenuRef = useRef(null);
   const reactionChoices = ['❤️','😂','👍','🔥','😮','👏'];
-  const openContextMenu = (x, y) => {
-    const menuWidth = 218;
-    const menuHeight = mine && !message.deleted_at ? 188 : 150;
-    setContextMenu({
-      x: Math.max(10, Math.min(x, window.innerWidth - menuWidth - 10)),
-      y: Math.max(10, Math.min(y, window.innerHeight - menuHeight - 10)),
-    });
-  };
+  const openContextMenu = (x, y) => setContextMenu({ x, y });
+  useLayoutEffect(() => {
+    if (!contextMenu || !contextMenuRef.current) return;
+    const menu = contextMenuRef.current;
+    const rect = menu.getBoundingClientRect();
+    const gap = 8;
+    const left = Math.max(gap, Math.min(contextMenu.x, window.innerWidth - rect.width - gap));
+    const below = contextMenu.y + 6;
+    const above = contextMenu.y - rect.height - 8;
+    const top = below + rect.height <= window.innerHeight - gap
+      ? below
+      : Math.max(gap, Math.min(above, window.innerHeight - rect.height - gap));
+    if (Math.abs(left - contextMenu.x) > 1 || Math.abs(top - contextMenu.y) > 1) {
+      setContextMenu({ x: left, y: top });
+    }
+  }, [contextMenu]);
   const clearLongPress = () => {
     if (longPressTimerRef.current) window.clearTimeout(longPressTimerRef.current);
     longPressTimerRef.current = null;
@@ -287,7 +296,7 @@ function MessageBubble({ message, mine, onOpenMedia, onReply, replyMessage, onJu
     {messageReactions.length > 0 && <div className="message-reaction-row" aria-label="Message reactions">{[...new Set(messageReactions.map(row => row.emoji))].map(emoji => { const rows = messageReactions.filter(row => row.emoji === emoji); const mineReaction = rows.some(row => row.user_id === currentProfile?.id); return <button type="button" key={emoji} className={mineReaction ? 'selected' : ''} onClick={() => toggleReaction(emoji)} disabled={reactionBusy} aria-pressed={mineReaction} aria-label={`${emoji}, ${rows.length} reactions`}><span className="reaction-emoji">{emoji}</span><span className="reaction-count">{rows.length}</span></button>; })}
     </div>}
     <div className="message-meta"><time>{timeLabel(message.created_at)}{message.edited_at && !message.deleted_at ? ' · edited' : ''}</time>{mine && <CheckCheck size={14} className="read-tick" aria-label="Sent"/>}</div>
-    {contextMenu && <div className="message-context-menu" role="menu" style={{left:contextMenu.x,top:contextMenu.y}} onPointerDown={event => event.stopPropagation()} onContextMenu={event => event.preventDefault()}>
+    {contextMenu && createPortal(<div ref={contextMenuRef} className="message-context-menu" role="menu" style={{left:contextMenu.x,top:contextMenu.y}} onPointerDown={event => event.stopPropagation()} onContextMenu={event => event.preventDefault()}>
       <div className="message-context-label">React</div>
       <div className="message-context-reactions">{reactionChoices.map(emoji => <button type="button" key={emoji} role="menuitem" onClick={() => toggleReaction(emoji)} aria-label={`React with ${emoji}`}>{emoji}</button>)}</div>
       <div className="message-context-separator"/>
@@ -296,7 +305,7 @@ function MessageBubble({ message, mine, onOpenMedia, onReply, replyMessage, onJu
         <button type="button" className="message-context-action" onClick={() => {setDraft(message.content || '');setEditing(true);setContextMenu(null);}}><Pencil size={15}/> Edit message</button>
         <button type="button" className="message-context-action danger" onClick={deleteThis}><Trash2 size={15}/> Delete message</button>
       </>}
-    </div>}
+    </div>, document.body)}
   </div></div>;
 }
 
