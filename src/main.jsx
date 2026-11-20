@@ -9,6 +9,7 @@ import {
 import { isSupabaseConfigured, supabase } from './supabase';
 import { AppearanceDashboard, AdminDashboard, DEFAULT_APPEARANCE, APPEARANCE_ACCENTS } from './AppearanceAdmin';
 import { AuthScreen, PasswordRecoveryModal } from './AuthFlow';
+import { compressMediaFile, formatMediaBytes } from './mediaCompressor';
 import './styles.css';
 
 const BRAND = 'Chatter';
@@ -28,29 +29,21 @@ const timeLabel = value => {
 };
 const fullTime = value => value ? new Date(value).toLocaleString([], { dateStyle: 'medium', timeStyle: 'short' }) : '';
 const avatarColor = str => FALLBACK_COLORS[(str || '').charCodeAt(0) % FALLBACK_COLORS.length];
-async function compressImage(file, maxWidth=1920, quality=.8) {
-  const bitmap=await createImageBitmap(file);
-  const scale=Math.min(1,maxWidth/bitmap.width);
-  const canvas=document.createElement('canvas');
-  canvas.width=Math.round(bitmap.width*scale); canvas.height=Math.round(bitmap.height*scale);
-  const ctx=canvas.getContext('2d'); ctx.drawImage(bitmap,0,0,canvas.width,canvas.height); bitmap.close?.();
-  const blob=await new Promise(resolve=>canvas.toBlob(resolve,'image/webp',quality));
-  if(!blob) throw new Error('Compression failed');
-  return new File([blob],file.name.replace(/\.[^.]+$/,'.webp'),{type:'image/webp',lastModified:Date.now()});
+function CompressionStatus({ status }) {
+  if (!status) return null;
+  const active = status.phase === 'compressing';
+  const failed = status.phase === 'error';
+  const saved = status.savedBytes || 0;
+  return <div className={`media-compression-status ${active ? 'is-compressing' : ''} ${failed ? 'is-error' : 'is-done'}`} role="status" aria-live="polite">
+    <div className="compression-status-top">
+      <span className="compression-status-title">{active ? <><span className="compression-spinner"/> Compressing media on this device…</> : failed ? 'Compression problem' : saved > 0 ? 'Compression complete' : 'Media check complete'}</span>
+      <b>{Math.round(status.progress || 0)}%</b>
+    </div>
+    <div className="compression-track"><span style={{ width: `${Math.max(4, status.progress || 0)}%` }}/></div>
+    <small>{status.message}</small>
+    {status.originalSize != null && <small className="compression-size-line">Original: {formatMediaBytes(status.originalSize)} · Final: {formatMediaBytes(status.outputSize ?? status.originalSize)}{saved > 0 ? ` · Saved ${formatMediaBytes(saved)}` : ''}</small>}
+  </div>;
 }
-
-async function compressAvatarImage(file) {
-  const bitmap=await createImageBitmap(file);
-  const side=Math.min(bitmap.width,bitmap.height);
-  const sx=(bitmap.width-side)/2, sy=(bitmap.height-side)/2;
-  const canvas=document.createElement('canvas'); canvas.width=512; canvas.height=512;
-  const ctx=canvas.getContext('2d'); ctx.drawImage(bitmap,sx,sy,side,side,0,0,512,512); bitmap.close?.();
-  let quality=.86, blob=null;
-  do { blob=await new Promise(resolve=>canvas.toBlob(resolve,'image/webp',quality)); quality-=.08; } while(blob && blob.size>500*1024 && quality>.45);
-  if(!blob) throw new Error('Avatar compression failed');
-  return new File([blob],'avatar.webp',{type:'image/webp',lastModified:Date.now()});
-}
-
 
 function Avatar({ profile, size = 'md', className = '' }) {
   return <div className={`avatar avatar-${size} ${className}`} style={{ background: profile?.avatar_url ? 'transparent' : avatarColor(profile?.id || profile?.display_name || 'a') }}>
@@ -70,6 +63,7 @@ function ProfileModal({ profile, onClose, onSave, onSignOut }) {
   const [bannerPreview, setBannerPreview] = useState(profile?.banner_url || '');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
+  const [compression, setCompression] = useState(null);
   const avatarInput = useRef(null); const bannerInput = useRef(null);
 
   const readFile = (file, setter, previewSetter) => {
@@ -81,7 +75,7 @@ function ProfileModal({ profile, onClose, onSave, onSignOut }) {
   const save = async e => {
     e.preventDefault(); setBusy(true); setError('');
     if (!/^#[0-9a-fA-F]{6}$/.test(usernameColor)) { setError('Enter a valid 6-digit HEX colour.'); setBusy(false); return; }
-    try { await onSave({ displayName, username, bio, usernameColor, compressMedia, avatar, banner }); onClose(); }
+    try { await onSave({ displayName, username, bio, usernameColor, compressMedia, avatar, banner }, setCompression); onClose(); }
     catch (e2) { setError(e2.message || 'Could not save your profile.'); }
     finally { setBusy(false); }
   };
@@ -96,6 +90,7 @@ function ProfileModal({ profile, onClose, onSave, onSignOut }) {
         </div>
         <div className="avatar-edit-row"><div className="avatar-wrap"><Avatar profile={{...profile, avatar_url: avatarPreview, display_name: displayName}} size="xl"/><button type="button" className="camera-bubble" onClick={() => avatarInput.current?.click()}><Camera size={14}/></button><input ref={avatarInput} type="file" accept="image/*" hidden onChange={e => readFile(e.target.files?.[0], setAvatar, setAvatarPreview)}/></div><div><strong>{displayName || 'Your name'}</strong><span>Profile photo</span></div></div>
         <div className="profile-fields"><label>Display name<input value={displayName} onChange={e => setDisplayName(e.target.value)} maxLength={32} placeholder="Your name" required/></label><label>Username<div className="username-input"><span>@</span><input value={username} onChange={e => setUsername(e.target.value.toLowerCase().replace(/[^a-z0-9_]/g, ''))} maxLength={24} minLength={3} placeholder="username" required/></div></label><label className="compress-setting"><span>Compress media before upload</span><input type="checkbox" checked={compressMedia} onChange={e=>setCompressMedia(e.target.checked)}/></label><label>About<textarea value={bio} onChange={e => setBio(e.target.value)} rows={3} maxLength={100} placeholder="A little about you…"/></label><label>Username colour<div className="username-colour-control"><input aria-label="Choose username colour" type="color" value={usernameColor} onChange={e=>setUsernameColor(e.target.value)}/><input aria-label="Username colour HEX" value={usernameColor} onChange={e=>/^#[0-9a-fA-F]{0,6}$/.test(e.target.value)&&setUsernameColor(e.target.value)} maxLength={7}/><span className="username-live-preview" style={{color:usernameColor}}>@{username || 'yourname'}</span></div><div className="colour-presets">{['#A3E6D3','#FF5733','#FFC300','#7B61FF','#42A5F5','#F06292','#8BC34A','#FFFFFF'].map(c=><button type="button" key={c} aria-label={c} style={{background:c}} onClick={()=>setUsernameColor(c)}/>)}</div></label></div>
+        <CompressionStatus status={compression}/>
         {error && <div className="form-error">{error}</div>}
         <div className="modal-actions"><button type="button" className="text-button danger" onClick={onSignOut}><LogOut size={16}/> Sign out</button><button className="primary-button" disabled={busy}>{busy ? 'Saving…' : 'Save changes'}<Check size={16}/></button></div>
       </form>
@@ -153,21 +148,34 @@ function ChatPanel({ conversation, other, currentProfile, messages, onSend, onSe
   const [selectedFile, setSelectedFile] = useState(null);
   const [filePreview, setFilePreview] = useState('');
   const [uploading, setUploading] = useState(false);
+  const [compression, setCompression] = useState(null);
   const fileInputRef = useRef(null);
   const endRef = useRef(null); const inputRef = useRef(null);
   useEffect(() => { endRef.current?.scrollIntoView({ behavior: 'smooth' }); }, [messages, conversation?.id]);
   useEffect(() => { setDraft(''); setShowDetails(false); setShowWallpaper(false); setSelectedFile(null); setFilePreview(''); }, [conversation?.id]);
   const chooseFile = async file => {
     if (!file) return;
-    let chosen=file;
-    const autoCompress=localStorage.getItem('chatter-compress-media') !== 'false';
-    if (file.type.startsWith('image/') && autoCompress && file.size <= 5*1024*1024) { try { const smaller=await compressImage(file); if(smaller.size<file.size) chosen=smaller; } catch {} }
-    if (file.size > 5*1024*1024) {
-      const compress = window.confirm('File too big, compress?');
-      if (!compress) return;
-      if (!file.type.startsWith('image/')) { window.alert('Only images can be compressed in this version. Please choose a file under 5 MB.'); return; }
-      try { chosen=await compressImage(file); } catch { window.alert('Could not compress this image.'); return; }
-      if (chosen.size > 5*1024*1024) { window.alert('The compressed image is still over 5 MB. Choose a smaller image.'); return; }
+    setCompression({ phase: 'compressing', progress: 1, message: 'Preparing your attachment…', originalSize: file.size, outputSize: file.size });
+    let chosen = file;
+    const autoCompress = localStorage.getItem('chatter-compress-media') !== 'false';
+    if (autoCompress && (file.type.startsWith('image/') || file.type.startsWith('video/'))) {
+      try {
+        const result = await compressMediaFile(file, {
+          maxDimension: 1280, quality: .8, targetBytes: 4.5 * 1024 * 1024,
+          videoBitsPerSecond: 1100000, fps: 24, maxVideoSeconds: 240,
+          onProgress: setCompression,
+        });
+        chosen = result.file;
+      } catch (caught) {
+        setCompression({ phase: 'error', progress: 100, message: caught?.message || 'Could not compress this attachment.' });
+        return;
+      }
+    } else {
+      setCompression({ phase: 'done', progress: 100, message: 'Compression is turned off. The original file will be used.', originalSize: file.size, outputSize: file.size });
+    }
+    if (chosen.size > 5 * 1024 * 1024) {
+      setCompression({ phase: 'error', progress: 100, message: `After compression this file is still ${formatMediaBytes(chosen.size)}. Chat attachments have a 5 MB limit. Try a shorter video or smaller image.`, originalSize: file.size, outputSize: chosen.size });
+      return;
     }
     setSelectedFile(chosen);
     setFilePreview(chosen.type.startsWith('image/') ? URL.createObjectURL(chosen) : '');
@@ -182,7 +190,8 @@ function ChatPanel({ conversation, other, currentProfile, messages, onSend, onSe
       <div ref={endRef}/>
     </div>
     <form className="composer" onSubmit={submit}>
-      {selectedFile && <div className="attachment-preview">{filePreview ? <img src={filePreview} alt="Preview"/> : <FileText size={19}/>}<span><b>{selectedFile.name}</b><small>{(selectedFile.size/1024/1024).toFixed(2)} MB · Ready to send</small></span><button type="button" className="icon-button" onClick={()=>{setSelectedFile(null);setFilePreview('');}}><X size={16}/></button></div>}
+      {selectedFile && <div className="attachment-preview">{filePreview ? <img src={filePreview} alt="Preview"/> : selectedFile.type.startsWith('video/') ? <video src={URL.createObjectURL(selectedFile)} muted playsInline/> : <FileText size={19}/>}<span><b>{selectedFile.name}</b><small>{formatMediaBytes(selectedFile.size)} · Ready to send</small></span><button type="button" className="icon-button" onClick={()=>{setSelectedFile(null);setFilePreview('');setCompression(null);}}><X size={16}/></button></div>}
+      <CompressionStatus status={compression}/>
       {uploading && <div className="upload-progress"><i/></div>}
       <input ref={fileInputRef} type="file" hidden accept="image/*,video/mp4,video/webm,image/gif,application/pdf,text/plain" onChange={e=>{chooseFile(e.target.files?.[0]);e.target.value='';}}/>
       <div className="composer-inner"><button type="button" className="composer-tool" title="Attach media (5 MB max)" onClick={()=>fileInputRef.current?.click()}><Paperclip size={19}/></button><textarea ref={inputRef} value={draft} onChange={e => setDraft(e.target.value)} onKeyDown={e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); submit(e); } }} rows={1} placeholder={`Message ${other?.display_name || 'your friend'}…`} maxLength={4000}/><button type="button" className="composer-tool emoji-tool" title="Emoji" onClick={() => setDraft(d => d + ' 😊')}><Smile size={19}/></button><button className="send-button" disabled={(!draft.trim()&&!selectedFile) || sending} title="Send message"><Send size={16}/></button></div><div className="composer-hint"><span>Up to 5 MB · Images, videos, GIFs, PDF, TXT</span><span>{draft.length}/4000</span></div></form>
@@ -217,6 +226,7 @@ function MediaViewer({ media, onClose }) {
 function ChatWallpaperModal({ wallpaper, onClose, onSave }) {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
+  const [compression, setCompression] = useState(null);
   const fileRef = useRef(null);
   const choices = [
     ['default','Classic','#102126'],['midnight','Midnight','#111827'],['forest','Forest','#16372f'],
@@ -224,7 +234,7 @@ function ChatWallpaperModal({ wallpaper, onClose, onSave }) {
   ];
   const save = async value => {
     setBusy(true); setError('');
-    try { await onSave(value); }
+    try { await onSave(value, setCompression); }
     catch (caught) { setError(caught?.message || 'Could not save this wallpaper.'); }
     finally { setBusy(false); }
   };
@@ -235,6 +245,7 @@ function ChatWallpaperModal({ wallpaper, onClose, onSave }) {
       <div className="wallpaper-choice-grid">{choices.map(([id,label,color])=><button key={id} className={wallpaper?.theme===id?'selected':''} onClick={()=>save({theme:id})} disabled={busy}><span style={{background:color}}/><b>{label}</b></button>)}</div>
       <button className="wallpaper-upload" onClick={()=>fileRef.current?.click()} disabled={busy}><ImagePlus size={17}/>{busy?'Saving…':'Use a photo from your device'}</button>
       <input ref={fileRef} type="file" accept="image/*" hidden onChange={event=>{const file=event.target.files?.[0];event.target.value='';if(file)save({file});}}/>
+      <CompressionStatus status={compression}/>
       {error&&<div className="form-error">{error}</div>}
     </section>
   </div>;
@@ -281,18 +292,42 @@ function PostDashboard({ profile, posts, loadingPosts, onCreatePost, onOpenMedia
   const [content, setContent] = useState('');
   const [selectedMedia, setSelectedMedia] = useState(null);
   const [previewUrl, setPreviewUrl] = useState('');
+  const [compression, setCompression] = useState(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
   const fileRef = useRef(null);
-  const chooseMedia = file => {
+  const chooseMedia = async file => {
     if (!file) return;
     if (!file.type.startsWith('image/') && !file.type.startsWith('video/')) { setError('Choose an image or video.'); return; }
-    if (file.size > 30*1024*1024) { setError('Posts support media up to 30 MB.'); return; }
-    setSelectedMedia(file);
-    setPreviewUrl(URL.createObjectURL(file));
-    setError('');
+    setBusy(true); setError('');
+    setCompression({ phase: 'compressing', progress: 1, message: 'Preparing your post media…', originalSize: file.size, outputSize: file.size });
+    try {
+      let chosen = file;
+      if (localStorage.getItem('chatter-compress-media') !== 'false') {
+        const result = await compressMediaFile(file, {
+          maxDimension: 1920, quality: .8, targetBytes: 27 * 1024 * 1024,
+          videoBitsPerSecond: 1900000, fps: 24, maxVideoSeconds: 240,
+          onProgress: setCompression,
+        });
+        chosen = result.file;
+      } else {
+        setCompression({ phase: 'done', progress: 100, message: 'Compression is turned off. The original media will be uploaded.', originalSize: file.size, outputSize: file.size });
+      }
+      if (chosen.size > 30 * 1024 * 1024) throw new Error(`This media is still ${formatMediaBytes(chosen.size)}. Posts support files up to 30 MB.`);
+      if (previewUrl) URL.revokeObjectURL(previewUrl);
+      setSelectedMedia(chosen);
+      setPreviewUrl(URL.createObjectURL(chosen));
+    } catch (caught) {
+      setCompression({ phase: 'error', progress: 100, message: caught?.message || 'Could not prepare this media.', originalSize: file.size, outputSize: file.size });
+      setError(caught?.message || 'Could not prepare this media.');
+    } finally {
+      setBusy(false);
+    }
   };
-  const clearMedia = () => { if(previewUrl) URL.revokeObjectURL(previewUrl); setPreviewUrl(''); setSelectedMedia(null); };
+  const clearMedia = () => {
+    if (previewUrl) URL.revokeObjectURL(previewUrl);
+    setPreviewUrl(''); setSelectedMedia(null); setCompression(null);
+  };
   const submit = async event => {
     event.preventDefault();
     const cleaned = content.trim();
@@ -309,8 +344,9 @@ function PostDashboard({ profile, posts, loadingPosts, onCreatePost, onOpenMedia
     <form className="post-composer" onSubmit={submit}>
       <div className="post-composer-head"><Avatar profile={profile} size="md"/><span>Posting as <b>{profile?.display_name || 'you'}</b></span></div>
       <textarea value={content} onChange={event => setContent(event.target.value)} maxLength={1000} rows={4} placeholder="What's happening? Share an update…" aria-label="Write a post"/>
-      {selectedMedia && <div className="post-composer-media">{selectedMedia.type.startsWith('image/') ? <img src={previewUrl} alt="Post preview"/> : <video src={previewUrl} controls playsInline/>}<span>{selectedMedia.name} · {(selectedMedia.size/1024/1024).toFixed(1)} MB</span><button type="button" className="icon-button" onClick={clearMedia} aria-label="Remove attachment"><X size={16}/></button></div>}
-      <div className="post-composer-footer"><span>{content.length}/1000 · {selectedMedia ? '1 attachment' : 'No attachment'}</span><div><input ref={fileRef} type="file" hidden accept="image/*,video/mp4,video/webm,video/quicktime" onChange={event=>{chooseMedia(event.target.files?.[0]);event.target.value='';}}/><button type="button" className="composer-tool" onClick={()=>fileRef.current?.click()} title="Attach a photo or video"><ImagePlus size={18}/></button><button type="submit" className="primary-button" disabled={(!content.trim()&&!selectedMedia)||busy}>{busy ? 'Publishing…' : 'Publish post'}<ArrowUp size={15}/></button></div></div>
+      {selectedMedia && <div className="post-composer-media">{selectedMedia.type.startsWith('image/') ? <img src={previewUrl} alt="Post preview"/> : <video src={previewUrl} controls playsInline/>}<span>{selectedMedia.name} · {formatMediaBytes(selectedMedia.size)}</span><button type="button" className="icon-button" onClick={clearMedia} aria-label="Remove attachment"><X size={16}/></button></div>}
+      <div className="post-composer-footer"><span>{content.length}/1000 · {selectedMedia ? '1 attachment' : 'No attachment'}</span><div><input ref={fileRef} type="file" hidden accept="image/*,video/mp4,video/webm,video/quicktime" onChange={event=>{chooseMedia(event.target.files?.[0]);event.target.value='';}}/><button type="button" className="composer-tool" onClick={()=>fileRef.current?.click()} title="Attach a photo or video" disabled={busy}><ImagePlus size={18}/></button><button type="submit" className="primary-button" disabled={(!content.trim()&&!selectedMedia)||busy}>{busy ? 'Preparing…' : 'Publish post'}<ArrowUp size={15}/></button></div></div>
+      <CompressionStatus status={compression}/>
       {error && <div className="form-error" role="alert">{error}</div>}
     </form>
     <div className="create-feed-heading"><span className="eyebrow">LATEST UPDATES</span><h2>Community feed</h2></div>
@@ -632,13 +668,7 @@ function App() {
   const createPost = async (content, media) => {
     const cleaned = (content || '').trim();
     if (!cleaned && !media) throw new Error('Write something or attach a photo/video.');
-    let chosen = media || null;
-    if (chosen && chosen.type.startsWith('image/') && chosen.type !== 'image/gif' && localStorage.getItem('chatter-compress-media') !== 'false') {
-      try {
-        const smaller = await compressImage(chosen, 1920, .82);
-        if (smaller.size < chosen.size) chosen = smaller;
-      } catch {}
-    }
+    const chosen = media || null;
     if (chosen && chosen.size > 30 * 1024 * 1024) throw new Error('Post media must be 30 MB or smaller.');
     let mediaPath = null;
     if (chosen) {
@@ -678,21 +708,31 @@ function App() {
     loadConversations(profile.id,false);
   };
 
-  const saveProfile = async changes => {
+  const saveProfile = async (changes, onCompressionProgress) => {
     localStorage.setItem('chatter-compress-media', String(changes.compressMedia));
     let avatarUrl = profile.avatar_url; let bannerUrl = profile.banner_url;
     const upload = async (file, kind) => {
       if (!file) return null;
-      if (kind==='avatar' && changes.compressMedia && file.type.startsWith('image/')) file=await compressAvatarImage(file);
-      else if (kind==='banner' && changes.compressMedia && file.type.startsWith('image/') && file.type !== 'image/gif') file=await compressImage(file, 1800, .82);
-      if (file.size>5*1024*1024) throw new Error('Profile images must be 5 MB or smaller after compression.');
-      const ext = (file.name.split('.').pop() || 'jpg').toLowerCase();
+      let chosen = file;
+      if (changes.compressMedia && file.type.startsWith('image/')) {
+        const result = await compressMediaFile(file, {
+          maxDimension: kind === 'avatar' ? 512 : 1800,
+          cropSquare: kind === 'avatar',
+          quality: kind === 'avatar' ? .86 : .82,
+          targetBytes: kind === 'avatar' ? 450 * 1024 : 4.5 * 1024 * 1024,
+          onProgress: state => onCompressionProgress?.({ ...state, message: `${kind === 'avatar' ? 'Profile photo' : 'Profile banner'} · ${state.message}` }),
+        });
+        chosen = result.file;
+      }
+      if (chosen.size > 5 * 1024 * 1024) throw new Error(`${kind === 'avatar' ? 'Profile photos' : 'Profile banners'} must be 5 MB or smaller after compression.`);
+      const ext = (chosen.name.split('.').pop() || 'jpg').toLowerCase();
       const path = `${profile.id}/${kind}-${Date.now()}.${ext}`;
-      const { error } = await supabase.storage.from('profile-media').upload(path, file, { contentType:file.type, cacheControl:'3600', upsert:false });
+      const { error } = await supabase.storage.from('profile-media').upload(path, chosen, { contentType:chosen.type, cacheControl:'3600', upsert:false });
       if (error) throw error;
       return supabase.storage.from('profile-media').getPublicUrl(path).data.publicUrl;
     };
-    const [newAvatar,newBanner] = await Promise.all([upload(changes.avatar,'avatar'),upload(changes.banner,'banner')]);
+    const newAvatar = await upload(changes.avatar, 'avatar');
+    const newBanner = await upload(changes.banner, 'banner');
     if (newAvatar) avatarUrl = newAvatar; if (newBanner) bannerUrl = newBanner;
     const username = changes.username.trim().toLowerCase();
     const { data, error } = await supabase.from('profiles').update({ display_name:changes.displayName.trim(), username, bio:changes.bio.trim(), username_color:changes.usernameColor, avatar_url:avatarUrl, banner_url:bannerUrl, updated_at:new Date().toISOString() }).eq('id',profile.id).select().single();
@@ -700,16 +740,17 @@ function App() {
     setProfile(data); setProfiles(prev => ({...prev,[data.id]:data})); notify('Profile updated.');
   };
 
-  const saveChatWallpaper = async ({ theme = 'default', file = null }) => {
+  const saveChatWallpaper = async ({ theme = 'default', file = null }, onCompressionProgress) => {
     if (!active?.id || !profile?.id) throw new Error('Open a conversation first.');
     let path = null;
     if (file) {
       if (!file.type.startsWith('image/')) throw new Error('Choose an image for your chat wallpaper.');
-      let chosen = file;
-      if (chosen.type !== 'image/gif') {
-        try { const smaller = await compressImage(chosen, 1600, .8); if (smaller.size < chosen.size) chosen = smaller; } catch {}
-      }
-      if (chosen.size > 5 * 1024 * 1024) throw new Error('Wallpaper images must be 5 MB or smaller.');
+      const result = await compressMediaFile(file, {
+        maxDimension: 1600, quality: .8, targetBytes: 4.5 * 1024 * 1024,
+        onProgress: state => onCompressionProgress?.({ ...state, message: `Chat wallpaper · ${state.message}` }),
+      });
+      const chosen = result.file;
+      if (chosen.size > 5 * 1024 * 1024) throw new Error('Wallpaper images must be 5 MB or smaller after compression.');
       const ext = (chosen.name.split('.').pop() || 'jpg').toLowerCase();
       path = `${profile.id}/${active.id}/wallpaper-${Date.now()}.${ext}`;
       const { error: uploadError } = await supabase.storage.from('chat-media').upload(path, chosen, { contentType: chosen.type, cacheControl: '3600', upsert: false });
