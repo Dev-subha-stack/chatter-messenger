@@ -95,6 +95,7 @@ export default function InlineVideoPlayer({ src, label = 'Video', className = ''
       ref={videoRef}
       className="inline-video-element"
       src={src}
+      muted={muted}
       playsInline
       webkit-playsinline="true"
       preload="metadata"
@@ -126,8 +127,13 @@ export default function InlineVideoPlayer({ src, label = 'Video', className = ''
       <span className="inline-video-time">{formatTime(duration)}</span>
       <button type="button" onClick={() => {
         const next = !muted;
+        const nextVolume = !next && volume === 0 ? 1 : volume;
         setMuted(next);
-        if (videoRef.current) videoRef.current.muted = next;
+        setVolume(nextVolume);
+        if (videoRef.current) {
+          videoRef.current.muted = next;
+          videoRef.current.volume = nextVolume;
+        }
       }} aria-label={muted ? 'Unmute video' : 'Mute video'}>{muted ? <VolumeX size={16}/> : <Volume2 size={16}/>}</button>
       <input
         className="inline-video-volume"
