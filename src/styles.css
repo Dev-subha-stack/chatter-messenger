@@ -1082,3 +1082,141 @@ button,.primary-button,.icon-button,.quick-action,.chat-row{transition:transform
   accent-color: var(--mint);
   cursor: pointer;
 }
+
+
+/*
+ * The message menu is rendered with createPortal(..., document.body), so these
+ * selectors MUST NOT be scoped under .chatter-app. Otherwise the portal loses
+ * its fixed positioning/background and appears as unstyled text or off-screen.
+ */
+.message-context-menu {
+  position: fixed !important;
+  inset: auto;
+  z-index: 100000 !important;
+  box-sizing: border-box;
+  width: 226px;
+  max-width: min(226px, calc(100vw - 20px));
+  max-height: min(360px, calc(100dvh - 16px));
+  overflow-y: auto;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 4px;
+  padding: 9px;
+  border: 1px solid rgba(173,214,197,.24);
+  border-radius: 14px;
+  background: #14272d;
+  color: #edf6f1;
+  box-shadow: 0 18px 55px rgba(0,0,0,.5);
+  font-family: 'DM Sans', sans-serif;
+  opacity: 1;
+  visibility: visible;
+  pointer-events: auto;
+  isolation: isolate;
+  animation: message-menu-in .12s ease-out;
+}
+.message-context-menu * { box-sizing: border-box; }
+.message-context-menu .message-context-label {
+  display: block;
+  padding: 3px 5px 5px;
+  color: #9bb1a7;
+  font-size: 9px;
+  font-weight: 800;
+  letter-spacing: .9px;
+  text-transform: uppercase;
+}
+.message-context-menu .message-context-reactions {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 3px;
+}
+.message-context-menu .message-context-reactions button {
+  flex: 1 1 0;
+  min-width: 0;
+  width: auto;
+  height: 36px;
+  display: grid;
+  place-items: center;
+  padding: 0;
+  border: 0;
+  border-radius: 9px;
+  background: transparent;
+  color: inherit;
+  font-size: 20px;
+  cursor: pointer;
+}
+.message-context-menu .message-context-reactions button:hover,
+.message-context-menu .message-context-reactions button:focus-visible {
+  background: rgba(163,230,211,.15);
+  outline: none;
+  transform: scale(1.08);
+}
+.message-context-menu .message-context-separator {
+  display: block;
+  height: 1px;
+  margin: 4px 0;
+  background: rgba(192,222,209,.14);
+}
+.message-context-menu .message-context-action {
+  min-height: 38px;
+  width: 100%;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 10px;
+  border: 0;
+  border-radius: 9px;
+  background: transparent;
+  color: #e2eee8;
+  font-size: 12px;
+  font-weight: 650;
+  text-align: left;
+  cursor: pointer;
+}
+.message-context-menu .message-context-action:hover,
+.message-context-menu .message-context-action:focus-visible {
+  background: rgba(163,230,211,.12);
+  color: #fff;
+  outline: none;
+}
+.message-context-menu .message-context-action.danger { color: #f0a0a0; }
+.message-context-menu .message-context-action.danger:hover { background: rgba(221,94,94,.14); color: #ffbcbc; }
+
+/* A visible click target makes the reaction menu discoverable without right-click. */
+.chatter-app .message-react-open {
+  min-height: 24px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  margin-left: 5px;
+  padding: 3px 7px;
+  border: 1px solid rgba(29,105,79,.2);
+  border-radius: 999px;
+  background: rgba(12,67,48,.07);
+  color: inherit;
+  font: 700 9px/1 'DM Sans', sans-serif;
+  cursor: pointer;
+  opacity: .82;
+}
+.chatter-app .bubble-theirs .message-react-open {
+  border-color: rgba(195,225,214,.16);
+  background: rgba(255,255,255,.06);
+  color: #c5d8cf;
+}
+.chatter-app .message-react-open:hover,
+.chatter-app .message-react-open:focus-visible {
+  border-color: var(--mint);
+  background: rgba(163,230,211,.15);
+  color: var(--mint);
+  opacity: 1;
+  outline: none;
+}
+@media(hover:hover) {
+  .chatter-app .message-react-open { opacity: 0; }
+  .chatter-app .message-bubble:hover .message-react-open,
+  .chatter-app .message-react-open:focus-visible { opacity: 1; }
+}
+@media(hover:none) {
+  .chatter-app .message-react-open { opacity: .9; }
+}
