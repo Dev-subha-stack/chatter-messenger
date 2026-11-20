@@ -247,7 +247,7 @@ function ChatPanel({ conversation, other, currentProfile, messages, onSend, onSe
   const endRef = useRef(null); const inputRef = useRef(null);
   const typingChannelRef = useRef(null), typingTimerRef = useRef(null), typingOffRef = useRef(null), lastTypingAtRef = useRef(0);
   useEffect(() => { endRef.current?.scrollIntoView({ behavior: 'smooth' }); }, [messages, conversation?.id]);
-  useEffect(() => { if(filePreview) URL.revokeObjectURL(filePreview); setDraft(''); setShowDetails(false); setShowWallpaper(false); setSelectedFile(null); setFilePreview(''); setCompression(null); setReplyTo(null); setEmojiOpen(false); }, [conversation?.id]);
+  useEffect(() => { if(filePreview) URL.revokeObjectURL(filePreview); setDraft(''); setShowDetails(false); setShowWallpaper(false); setSelectedFile(null); setFilePreview(''); setCompression(null); setReplyTo(null); setEmojiOpen(false); setPollDraft(null); }, [conversation?.id]);
   useEffect(() => { if (conversation?.id) inputRef.current?.focus(); }, [conversation?.id]);
   useEffect(() => {
     if (!conversation?.id || !currentProfile?.id) return;
@@ -972,8 +972,13 @@ function App() {
     const { data, error } = await supabase.from('messages').insert({ conversation_id:active.id, sender_id:profile.id, content, reply_to_message_id: replyToId, reply_to_sender_id: replyTo?.sender_id || null, reply_to_content: replyTo?.content || replyTo?.attachment_name || null, mentions }).select().single();
     if (error) throw error;
     if (pollDraft) {
-      const messagePoll = await createPoll('message', data.id, pollDraft);
-      data.poll_id = messagePoll.id; data.poll = messagePoll;
+      try {
+        const messagePoll = await createPoll('message', data.id, pollDraft);
+        data.poll_id = messagePoll.id; data.poll = messagePoll;
+      } catch (pollError) {
+        await supabase.from('messages').delete().eq('id', data.id).eq('sender_id', profile.id);
+        throw pollError;
+      }
     }
     if (mentions.length) {
       const { error: pingError } = await supabase.from('chatter_notifications').insert(mentions.map(recipient_user_id => ({
@@ -1032,7 +1037,14 @@ function App() {
       if (mediaPath) await supabase.storage.from('post-media').remove([mediaPath]);
       throw error;
     }
-    if (pollDraft) await createPoll('post', createdPost.id, pollDraft);
+    if (pollDraft) {
+      try { await createPoll('post', createdPost.id, pollDraft); }
+      catch (pollError) {
+        await supabase.from('posts').delete().eq('id', createdPost.id).eq('author_id', profile.id);
+        if (mediaPath) await supabase.storage.from('post-media').remove([mediaPath]);
+        throw pollError;
+      }
+    }
     if (mentions.length) {
       const { error: pingError } = await supabase.from('chatter_notifications').insert(mentions.map(recipient_user_id => ({
         recipient_user_id, actor_user_id: profile.id, notification_type: 'post_mention',
