@@ -126,7 +126,8 @@ async function compressVideo(file, options, onProgress) {
     if (typeof canvas.captureStream !== 'function') throw new Error('Video canvas capture is not supported on this device.');
 
     const preferredTypes = [
-      'video/mp4;codecs=h264,aac',\n      'video/mp4',\n      'video/webm;codecs=vp9,opus',
+      'video/mp4;codecs=h264,aac',
+      'video/mp4',\n      'video/webm;codecs=vp9,opus',
       'video/webm;codecs=vp8,opus',
       'video/webm;codecs=vp8',
       'video/webm',
