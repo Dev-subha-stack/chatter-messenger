@@ -148,7 +148,8 @@ function MessageBubble({ message, mine, onOpenMedia }) {
 function ChatPanel({ conversation, other, currentProfile, messages, onSend, onSendFile, loading, isMobile, onBack, onOpenProfile, onOpenMedia, onlineUserIds, wallpaper, onSaveWallpaper }) {
   const [draft, setDraft] = useState('');
   const [sending, setSending] = useState(false);
-  const [showDetails, setShowDetails] = useState(false);\n  const [showWallpaper, setShowWallpaper] = useState(false);
+  const [showDetails, setShowDetails] = useState(false);
+  const [showWallpaper, setShowWallpaper] = useState(false);
   const [selectedFile, setSelectedFile] = useState(null);
   const [filePreview, setFilePreview] = useState('');
   const [uploading, setUploading] = useState(false);
@@ -326,7 +327,9 @@ function App() {
   const [profiles, setProfiles] = useState({});
   const [conversations, setConversations] = useState([]);
   const [posts, setPosts] = useState([]);
-  const [loadingPosts, setLoadingPosts] = useState(false);\n  const [mediaViewer, setMediaViewer] = useState(null);\n  const [chatWallpaper, setChatWallpaper] = useState({ theme: 'default', path: null, url: null });
+  const [loadingPosts, setLoadingPosts] = useState(false);
+  const [mediaViewer, setMediaViewer] = useState(null);
+  const [chatWallpaper, setChatWallpaper] = useState({ theme: 'default', path: null, url: null });
   const [active, setActive] = useState(null);
   const [messages, setMessages] = useState([]);
   const [loadingChats, setLoadingChats] = useState(false);
@@ -759,7 +762,8 @@ function App() {
     {showPasswordRecovery&&<PasswordRecoveryModal onClose={()=>setShowPasswordRecovery(false)} onNotify={notify}/>}
     {showNewChat&&<NewChatModal profiles={allProfiles} currentUserId={profile.id} onlineUserIds={onlineUserIds} onClose={()=>setShowNewChat(false)} onStart={startConversation}/>}
     {viewProfile&&<PublicProfileModal profile={viewProfile} onClose={()=>setViewProfile(null)} isOnline={onlineUserIds.has(viewProfile.id)}/>}
-    {mediaViewer&&<MediaViewer media={mediaViewer} onClose={()=>setMediaViewer(null)}/>}\n    {toast&&<div className="toast"><CheckCircle2 size={16}/>{toast}</div>}
+    {mediaViewer&&<MediaViewer media={mediaViewer} onClose={()=>setMediaViewer(null)}/>}
+    {toast&&<div className="toast"><CheckCircle2 size={16}/>{toast}</div>}
   </div>;
 }
 
