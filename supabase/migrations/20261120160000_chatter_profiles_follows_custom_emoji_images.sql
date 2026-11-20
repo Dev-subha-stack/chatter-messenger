@@ -63,3 +63,26 @@ alter table public.chatter_notifications
 alter table public.chatter_notifications
   add constraint chatter_notifications_target_type_check
   check (target_type in ('conversation','post','profile'));
+
+create unique index if not exists user_custom_emojis_shortcode_global_uidx
+  on public.user_custom_emojis(shortcode);
+
+do $$
+begin
+  if not exists (
+    select 1 from pg_constraint
+    where conrelid = 'public.user_follows'::regclass
+      and conname = 'user_follows_no_self_follow'
+  ) then
+    alter table public.user_follows
+      add constraint user_follows_no_self_follow check (follower_id <> following_id);
+  end if;
+  if not exists (
+    select 1 from pg_publication_tables
+    where pubname = 'supabase_realtime'
+      and schemaname = 'public'
+      and tablename = 'user_custom_emojis'
+  ) then
+    alter publication supabase_realtime add table public.user_custom_emojis;
+  end if;
+end $$;
