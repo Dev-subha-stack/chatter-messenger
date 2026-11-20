@@ -127,7 +127,8 @@ async function compressVideo(file, options, onProgress) {
 
     const preferredTypes = [
       'video/mp4;codecs=h264,aac',
-      'video/mp4',\n      'video/webm;codecs=vp9,opus',
+      'video/mp4',
+      'video/webm;codecs=vp9,opus',
       'video/webm;codecs=vp8,opus',
       'video/webm;codecs=vp8',
       'video/webm',
