@@ -43,7 +43,10 @@ const cssSource = await readFile(new URL('../src/styles.css', import.meta.url), 
 assert.match(mainSource, /onContextMenu=\{event => \{ event\.preventDefault\(\);[\s\S]*?openContextMenu\(event\.clientX, event\.clientY\); \}\}/, 'Right-click must open the message action menu.');
 assert.match(mainSource, /className="message-react-open"/, 'A visible click-to-react button must be present.');
 assert.match(mainSource, /createPortal\([\s\S]*?className="message-context-menu"/, 'The action menu must be rendered through the portal.');
-assert.match(cssSource, /(?:^|\n)\.message-context-menu\s*\{[^}]*position:\s*fixed\s*!important;[^}]*z-index:\s*100000\s*!important;/, 'Portal menu styles must be global, fixed and above the app.');
+const portalCssStart = cssSource.lastIndexOf('\n.message-context-menu {');
+assert.notEqual(portalCssStart, -1, 'A global message menu rule must exist for the body portal.');
+const portalCss = cssSource.slice(portalCssStart);
+assert.match(portalCss, /position:\\s*fixed\\s*!important;[\\s\\S]{0,180}z-index:\\s*100000\\s*!important;/, 'The body portal must be fixed-positioned above the app.');
 assert.match(cssSource, /(?:^|\\n)\\.message-context-menu\\s*\\{[^}]*position:\\s*fixed\\s*!important;[^}]*z-index:\\s*100000\\s*!important;/, 'A global fixed-position portal rule must exist after the app-scoped legacy rule.');
 
 console.log('MESSAGE MENU TESTS PASSED: viewport edges, stable positioning, right-click, click-to-react, portal rendering and global portal styling.');
