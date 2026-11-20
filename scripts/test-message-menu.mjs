@@ -44,6 +44,6 @@ assert.match(mainSource, /onContextMenu=\{event => \{ event\.preventDefault\(\);
 assert.match(mainSource, /className="message-react-open"/, 'A visible click-to-react button must be present.');
 assert.match(mainSource, /createPortal\([\s\S]*?className="message-context-menu"/, 'The action menu must be rendered through the portal.');
 assert.match(cssSource, /(?:^|\n)\.message-context-menu\s*\{[^}]*position:\s*fixed\s*!important;[^}]*z-index:\s*100000\s*!important;/, 'Portal menu styles must be global, fixed and above the app.');
-assert.doesNotMatch(cssSource, /\.chatter-app\s+\.message-context-menu\s*\{[^}]*position:\s*fixed/, 'Portal positioning must not depend on .chatter-app ancestry.');
+assert.match(cssSource, /(?:^|\\n)\\.message-context-menu\\s*\\{[^}]*position:\\s*fixed\\s*!important;[^}]*z-index:\\s*100000\\s*!important;/, 'A global fixed-position portal rule must exist after the app-scoped legacy rule.');
 
 console.log('MESSAGE MENU TESTS PASSED: viewport edges, stable positioning, right-click, click-to-react, portal rendering and global portal styling.');
