@@ -1,5 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { Heart, Repeat2, MessageCircle, CornerDownRight, Send, Smile, Trash2, X, Bell, ImagePlus, Search } from 'lucide-react';
+import { Heart, Repeat2, MessageCircle, CornerDownRight, Send, Smile, Trash2, X, Bell, ImagePlus, Search, Plus, Check, BarChart3 } from 'lucide-react';
 import { supabase } from './supabase';
 import { compressMediaFile } from './mediaCompressor';
 
@@ -53,6 +53,69 @@ export function EmojiPicker({ customEmojis = [], onSelect }) {
   </div>;
 }
 
+export function PollDraftEditor({ value, onChange, disabled = false }) {
+  const draft = value || { question: '', options: ['', ''], allowMultiple: false };
+  const update = changes => onChange?.({ ...draft, ...changes });
+  const updateOption = (index, option) => update({ options: draft.options.map((item, i) => i === index ? option : item) });
+  const addOption = () => { if (draft.options.length < 6) update({ options: [...draft.options, ''] }); };
+  const removeOption = index => { if (draft.options.length > 2) update({ options: draft.options.filter((_, i) => i !== index) }); };
+  return <div className="poll-draft-editor">
+    <label>Poll question<input value={draft.question} maxLength={180} onChange={event => update({ question: event.target.value })} placeholder="Ask your community…" disabled={disabled}/></label>
+    <div className="poll-draft-options">{draft.options.map((option, index) => <div className="poll-draft-option" key={index}><span>{String.fromCharCode(65 + index)}</span><input value={option} maxLength={100} onChange={event => updateOption(index, event.target.value)} placeholder={`Option ${index + 1}`} disabled={disabled}/>{draft.options.length > 2 && <button type="button" onClick={() => removeOption(index)} disabled={disabled} aria-label={`Remove option ${index + 1}`}><X size={14}/></button>}</div>)}</div>
+    <div className="poll-draft-footer"><button type="button" className="poll-add-option" onClick={addOption} disabled={disabled || draft.options.length >= 6}><Plus size={13}/> Add option</button><label className="poll-multiple-toggle"><input type="checkbox" checked={Boolean(draft.allowMultiple)} onChange={event => update({ allowMultiple: event.target.checked })} disabled={disabled}/> Allow multiple choices</label></div>
+    <small>2–6 options · One vote per person unless multiple choices are enabled</small>
+  </div>;
+}
+
+export function PollCard({ poll, currentUserId }) {
+  const [votes, setVotes] = useState(poll?.votes || []);
+  const [busyOption, setBusyOption] = useState('');
+  const [error, setError] = useState('');
+  useEffect(() => {
+    setVotes(poll?.votes || []);
+    if (!poll?.id) return;
+    let alive = true;
+    const refresh = async () => {
+      const { data, error: queryError } = await supabase.from('chatter_poll_votes').select('poll_id,option_id,user_id').eq('poll_id', poll.id);
+      if (alive && !queryError) setVotes(data || []);
+    };
+    refresh();
+    const channel = supabase.channel(`poll-votes:${poll.id}`)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'chatter_poll_votes', filter: `poll_id=eq.${poll.id}` }, refresh)
+      .subscribe();
+    return () => { alive = false; supabase.removeChannel(channel); };
+  }, [poll?.id]);
+  if (!poll) return null;
+  const total = votes.length;
+  const selected = new Set(votes.filter(vote => vote.user_id === currentUserId).map(vote => vote.option_id));
+  const closed = Boolean(poll.closes_at && new Date(poll.closes_at).getTime() <= Date.now());
+  const vote = async optionId => {
+    if (busyOption || closed) return;
+    setBusyOption(optionId); setError('');
+    const { error: voteError } = await supabase.rpc('toggle_chatter_poll_vote', { p_poll_id: poll.id, p_option_id: optionId });
+    if (voteError) setError(voteError.message || 'Your vote could not be saved.');
+    else {
+      const { data } = await supabase.from('chatter_poll_votes').select('poll_id,option_id,user_id').eq('poll_id', poll.id);
+      setVotes(data || []);
+    }
+    setBusyOption('');
+  };
+  return <section className="poll-card">
+    <div className="poll-card-heading"><BarChart3 size={16}/><b>{poll.question}</b></div>
+    <div className="poll-card-options">{(poll.options || []).map(option => {
+      const count = votes.filter(item => item.option_id === option.id).length;
+      const percent = total ? Math.round(count / total * 100) : 0;
+      return <button type="button" key={option.id} className={`poll-option-result ${selected.has(option.id) ? 'selected' : ''}`} onClick={() => vote(option.id)} disabled={closed || Boolean(busyOption)} aria-pressed={selected.has(option.id)}>
+        <span className="poll-option-label"><i>{selected.has(option.id) ? <Check size={11}/> : null}</i>{option.option_text}<b>{percent}%</b></span>
+        <span className="poll-option-track"><i style={{ width: `${percent}%` }}/></span>
+        <small>{count} vote{count === 1 ? '' : 's'}</small>
+      </button>;
+    })}</div>
+    <div className="poll-card-footer"><span>{total} vote{total === 1 ? '' : 's'} · {poll.allow_multiple ? 'Multiple choices' : 'Choose one'}</span><span>{closed ? 'Poll closed' : 'Tap an option to vote'}</span></div>
+    {error && <small className="poll-error">{error}</small>}
+  </section>;
+}
+
 function SmallAvatar({ profile }) {
   return <span className="social-avatar">{profile?.avatar_url ? <img src={profile.avatar_url} alt=""/> : initials(profile?.display_name || profile?.username || '?')}</span>;
 }
@@ -64,6 +127,7 @@ export function SocialPostCard({ post, onOpenMedia, currentUserId, profiles = {}
   const [comments, setComments] = useState([]);
   const [likes, setLikes] = useState([]);
   const [reposts, setReposts] = useState([]);
+  const [commentLikes, setCommentLikes] = useState([]);
   const [showComments, setShowComments] = useState(false);
   const [draft, setDraft] = useState('');
   const [replyTo, setReplyTo] = useState(null);
@@ -78,7 +142,14 @@ export function SocialPostCard({ post, onOpenMedia, currentUserId, profiles = {}
       supabase.from('post_likes').select('user_id').eq('post_id', post.id),
       supabase.from('post_reposts').select('user_id').eq('post_id', post.id),
     ]);
-    if (!commentResult.error) setComments(commentResult.data || []);
+    if (!commentResult.error) {
+      const nextComments = commentResult.data || [];
+      setComments(nextComments);
+      if (nextComments.length) {
+        const { data: likedComments, error: commentLikesError } = await supabase.from('post_comment_likes').select('comment_id,user_id').in('comment_id', nextComments.map(item => item.id));
+        if (!commentLikesError) setCommentLikes(likedComments || []);
+      } else setCommentLikes([]);
+    }
     if (!likeResult.error) setLikes(likeResult.data || []);
     if (!repostResult.error) setReposts(repostResult.data || []);
   };
@@ -95,6 +166,14 @@ export function SocialPostCard({ post, onOpenMedia, currentUserId, profiles = {}
       : await supabase.from('post_likes').insert({ post_id: post.id, user_id: currentUserId });
     if (result.error) { setError(result.error.message); return; }
     setLikes(rows => liked ? rows.filter(row => row.user_id !== currentUserId) : [...rows, { user_id: currentUserId }]);
+  };
+  const toggleCommentLike = async comment => {
+    const mine = commentLikes.some(row => row.comment_id === comment.id && row.user_id === currentUserId);
+    const result = mine
+      ? await supabase.from('post_comment_likes').delete().eq('comment_id', comment.id).eq('user_id', currentUserId)
+      : await supabase.from('post_comment_likes').insert({ comment_id: comment.id, user_id: currentUserId });
+    if (result.error) { setError(result.error.message); return; }
+    setCommentLikes(rows => mine ? rows.filter(row => !(row.comment_id === comment.id && row.user_id === currentUserId)) : [...rows, { comment_id: comment.id, user_id: currentUserId }]);
   };
   const toggleRepost = async () => {
     setError('');
@@ -139,8 +218,7 @@ export function SocialPostCard({ post, onOpenMedia, currentUserId, profiles = {}
     <div className="post-comment-thread" key={comment.id}>
       <div className="post-comment-row">
         <SmallAvatar profile={comment.author}/>
-        <div className="post-comment-copy"><b>{comment.author?.display_name || 'Chatter member'}</b><p>{renderRichContent(comment.content, customEmojis)}</p><small>{new Date(comment.created_at).toLocaleString([], { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}</small></div>
-        <button type="button" className="comment-reply-button" onClick={() => { setReplyTo(comment); setShowComments(true); }}><CornerDownRight size={13}/> Reply</button>
+        <div className="post-comment-copy"><b>{comment.author?.display_name || 'Chatter member'}</b><p>{renderRichContent(comment.content, customEmojis)}</p><small>{new Date(comment.created_at).toLocaleString([], { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}</small><div className="post-comment-actions-inline"><button type="button" className={`comment-like-button ${commentLikes.some(row => row.comment_id === comment.id && row.user_id === currentUserId) ? 'liked' : ''}`} onClick={() => toggleCommentLike(comment)} aria-label="Like comment"><Heart size={13} fill={commentLikes.some(row => row.comment_id === comment.id && row.user_id === currentUserId) ? 'currentColor' : 'none'}/><span>{commentLikes.filter(row => row.comment_id === comment.id).length}</span></button><button type="button" className="comment-reply-button" onClick={() => { setReplyTo(comment); setShowComments(true); }}><CornerDownRight size={13}/> Reply</button></div></div>
       </div>
       {renderThread(comment.id)}
     </div>
@@ -156,6 +234,7 @@ export function SocialPostCard({ post, onOpenMedia, currentUserId, profiles = {}
       </div>
     </div>
     {post.content && <p className="post-content">{renderRichContent(post.content, customEmojis)}</p>}
+    {post.poll && <PollCard poll={post.poll} currentUserId={currentUserId}/>}
     {post.media_url && image && <button type="button" className="post-media-open media-open-button" onClick={() => onOpenMedia?.({src:post.media_url,type:'image',name:post.media_name})}><img className="post-media-preview" src={post.media_url} alt={post.media_name || 'Post image'}/></button>}
     {post.media_url && video && <button type="button" className="post-media-open post-video-open media-open-button" onClick={() => onOpenMedia?.({src:post.media_url,type:'video',name:post.media_name})}><video className="post-media-preview" src={post.media_url} muted playsInline preload="metadata"/><span className="media-play-mark">▶</span></button>}
     <div className="post-interaction-bar">
