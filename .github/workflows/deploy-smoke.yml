@@ -33,5 +33,7 @@ jobs:
         run: npm run build
       - name: Verify React boot imports and production assets
         run: npm run verify:boot
+      - name: Test message context menu positioning regression
+        run: npm run test:message-menu
       - name: Test real browser startup on desktop and mobile
         run: npm run smoke:browser
