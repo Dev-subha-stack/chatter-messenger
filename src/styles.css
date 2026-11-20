@@ -50,3 +50,20 @@ button,.primary-button,.icon-button,.quick-action,.chat-row{transition:transform
 @media(max-width:760px){.home-feed-actions{gap:7px}.home-feed-actions .primary-button{padding:9px 10px;font-size:9px}.home-feed-actions .text-button{font-size:9px}.post-media-preview{max-height:360px}.media-viewer{padding:48px 8px 16px}.media-viewer-stage img,.media-viewer-stage video{max-height:calc(100dvh - 100px)}.chat-wallpaper-modal{padding:18px}.wallpaper-choice-grid{gap:7px}.wallpaper-choice-grid button{padding:6px}.wallpaper-choice-grid button>span{height:47px}}
 
 .avatar-holder .offline-dot{position:absolute;right:-1px;bottom:0}.chat-header-person .online-dot,.chat-header-person .offline-dot,.profile-presence .online-dot,.profile-presence .offline-dot{position:static;border:0;display:inline-block;flex:none}
+
+/* Visible client-side media compression feedback */
+.media-compression-status{display:flex;flex-direction:column;gap:7px;margin:9px 0;padding:11px 12px;border:1px solid rgba(142,215,190,.18);border-radius:11px;background:rgba(106,188,158,.07);color:var(--ink);font-size:10px}
+.compression-status-top{display:flex;align-items:center;justify-content:space-between;gap:10px}
+.compression-status-title{display:flex;align-items:center;gap:8px;font-size:10px;font-weight:800;color:var(--mint)}
+.compression-status-top>b{font-size:10px;color:var(--ink);font-variant-numeric:tabular-nums}
+.compression-track{height:5px;border-radius:9px;background:rgba(145,190,174,.16);overflow:hidden}
+.compression-track>span{display:block;height:100%;border-radius:9px;background:linear-gradient(90deg,var(--mint2),#b8f0d9);transition:width .2s ease}
+.media-compression-status>small{font-size:9px;line-height:1.45;color:var(--sub);overflow-wrap:anywhere}
+.media-compression-status .compression-size-line{color:var(--mint);font-weight:700}
+.media-compression-status.is-error{border-color:rgba(228,126,126,.3);background:rgba(180,70,70,.08)}
+.media-compression-status.is-error .compression-status-title,.media-compression-status.is-error .compression-status-top>b{color:#e79a9a}
+.media-compression-status.is-error .compression-track>span{background:#d98282}
+.compression-spinner{width:12px;height:12px;flex:none;border:2px solid rgba(155,231,206,.25);border-top-color:var(--mint);border-radius:50%;animation:compression-spin .75s linear infinite}
+@keyframes compression-spin{to{transform:rotate(360deg)}}
+.attachment-preview video{width:56px;height:44px;border-radius:7px;object-fit:cover;background:#080f12}
+@media(max-width:760px){.media-compression-status{padding:9px 10px}.compression-status-title{font-size:9px}.media-compression-status>small{font-size:8px}}
