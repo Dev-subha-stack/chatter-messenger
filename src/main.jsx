@@ -12,6 +12,7 @@ import { AppearanceDashboard, AdminDashboard, DEFAULT_APPEARANCE, APPEARANCE_ACC
 import { AuthScreen, PasswordRecoveryModal } from './AuthFlow';
 import { compressMediaFile, formatMediaBytes } from './mediaCompressor';
 import InlineVideoPlayer from './InlineVideoPlayer';
+import { getMessageContextMenuPosition } from './messageContextMenu';
 import { SocialPostCard, NotificationCenter, EmojiPicker, PollCard, PollDraftEditor, renderRichContent } from './SocialFeatures';
 import './styles.css';
 
@@ -203,16 +204,18 @@ function MessageBubble({ message, mine, onOpenMedia, onReply, replyMessage, onJu
     if (!contextMenu || !contextMenuRef.current) return;
     const menu = contextMenuRef.current;
     const rect = menu.getBoundingClientRect();
-    const gap = 8;
-    const left = Math.max(gap, Math.min(contextMenu.x, window.innerWidth - rect.width - gap));
-    const below = contextMenu.y + 6;
-    const above = contextMenu.y - rect.height - 8;
-    const top = below + rect.height <= window.innerHeight - gap
-      ? below
-      : Math.max(gap, Math.min(above, window.innerHeight - rect.height - gap));
-    if (Math.abs(left - contextMenu.x) > 1 || Math.abs(top - contextMenu.y) > 1) {
-      setContextMenu({ x: left, y: top });
-    }
+    const position = getMessageContextMenuPosition({
+      anchorX: contextMenu.x,
+      anchorY: contextMenu.y,
+      menuWidth: rect.width,
+      menuHeight: rect.height,
+      viewportWidth: window.innerWidth,
+      viewportHeight: window.innerHeight,
+    });
+    // Position the portal directly in the DOM. Do not update React state here:
+    // doing so on every layout pass can trigger React error #185.
+    menu.style.left = `${position.x}px`;
+    menu.style.top = `${position.y}px`;
   }, [contextMenu]);
   const clearLongPress = () => {
     if (longPressTimerRef.current) window.clearTimeout(longPressTimerRef.current);
