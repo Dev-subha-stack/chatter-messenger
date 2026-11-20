@@ -1,4 +1,4 @@
-const CACHE = 'chatter-shell-v3';
+const CACHE = 'chatter-shell-v4';
 const SHELL = ['/', '/manifest.webmanifest', '/icons/icon-192.svg', '/icons/icon-512.svg'];
 self.addEventListener('install', event => {
   event.waitUntil(caches.open(CACHE).then(cache => cache.addAll(SHELL)));
