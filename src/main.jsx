@@ -168,7 +168,6 @@ function MessageBubble({ message, mine, onOpenMedia, onReply, replyMessage, onJu
   const isVideo = message.attachment_type?.startsWith('video/');
   const [editing,setEditing] = useState(false);
   const [draft,setDraft] = useState(message.content || '');
-  const [menuOpen,setMenuOpen] = useState(false);
   const [replyLookup, setReplyLookup] = useState(null);
   useEffect(() => {
     const replyId = message.reply_to_message_id;
@@ -227,7 +226,6 @@ function MessageBubble({ message, mine, onOpenMedia, onReply, replyMessage, onJu
     catch (error) { window.alert(error?.message || 'Could not edit this message.'); }
   };
   const deleteThis = async () => {
-    setMenuOpen(false);
     if (!window.confirm('Delete this message for everyone in this chat?')) return;
     try { await onDelete?.(message.id); }
     catch (error) { window.alert(error?.message || 'Could not delete this message.'); }
@@ -242,14 +240,23 @@ function MessageBubble({ message, mine, onOpenMedia, onReply, replyMessage, onJu
           : <a className="message-attachment-file" href={message.attachment_url} target="_blank" rel="noreferrer"><FileText size={18}/><span>{message.attachment_name || 'Download file'}</span><ArrowUp size={13}/></a>)}
       {editing
         ? <div className="message-edit-box"><textarea value={draft} onChange={event => setDraft(event.target.value)} maxLength={4000} rows={Math.min(5,Math.max(2,draft.split(String.fromCharCode(10)).length))}/><div><button type="button" onClick={() => {setEditing(false);setDraft(message.content || '')}}>Cancel</button><button type="button" onClick={saveEdit} disabled={!draft.trim()}>Save</button></div></div>
-        : message.content && message.content !== '📊 Poll' && (!message.attachment_url || message.content !== message.attachment_name) && <span>{renderRichContent(message.content, customEmojis)}</span>}
+        : message.content && message.content !== '📊 Poll' && (!message.attachment_url || message.content !== message.attachment_name) && <span className="message-content">{renderRichContent(message.content, customEmojis)}</span>}
       {message.poll && <PollCard poll={message.poll} currentUserId={currentProfile?.id}/>}
     </>}
     <div className="message-reaction-row">
       {messageReactions.length > 0 && <div className="message-reactions" aria-label="Message reactions">{[...new Set(messageReactions.map(row => row.emoji))].map(emoji => { const rows = messageReactions.filter(row => row.emoji === emoji); const mineReaction = rows.some(row => row.user_id === currentProfile?.id); return <button type="button" key={emoji} className={mineReaction ? 'selected' : ''} onClick={() => toggleReaction(emoji)} disabled={reactionBusy} aria-pressed={mineReaction} aria-label={`${emoji}, ${rows.length} reactions`}><span className="reaction-emoji">{emoji}</span><span className="reaction-count">{rows.length}</span></button>; })}</div>}
       {!message.deleted_at && <div className="message-reaction-picker-wrap"><button type="button" className="message-react-trigger" onClick={() => setReactionPickerOpen(value => !value)} aria-label="Add reaction" aria-expanded={reactionPickerOpen} title="Add reaction"><Smile size={14}/><span>React</span></button>{reactionPickerOpen && <div className="message-reaction-popover" role="group" aria-label="Choose a reaction">{reactionChoices.map(emoji => <button type="button" key={emoji} onClick={() => toggleReaction(emoji)} aria-label={emoji}>{emoji}</button>)}</div>}</div>}
     </div>
-    <div className="message-meta"><time>{timeLabel(message.created_at)}{message.edited_at && !message.deleted_at ? ' · edited' : ''}</time>{mine && <CheckCheck size={14} className="read-tick"/>}<button type="button" className="message-reply-action" onClick={onReply} title="Reply to message"><CornerDownRight size={13}/></button>{mine && !message.deleted_at && !editing && <div className="message-actions-wrap"><button type="button" className="message-reply-action" title="Message options" onClick={() => setMenuOpen(value => !value)}><MoreHorizontal size={15}/></button>{menuOpen && <div className="message-actions-menu"><button type="button" onClick={() => {setDraft(message.content || '');setEditing(true);setMenuOpen(false)}}><Pencil size={13}/> Edit</button><button type="button" className="danger" onClick={deleteThis}><Trash2 size={13}/> Delete</button></div>}</div>}</div>
+    <div className="message-footer">
+      <div className="message-meta"><time>{timeLabel(message.created_at)}{message.edited_at && !message.deleted_at ? ' · edited' : ''}</time>{mine && <CheckCheck size={14} className="read-tick" aria-label="Sent"/>}</div>
+      <div className="message-actions">
+        <button type="button" className="message-action-button reply" onClick={onReply} title="Reply to message"><CornerDownRight size={13}/><span>Reply</span></button>
+        {mine && !message.deleted_at && !editing && <>
+          <button type="button" className="message-action-button edit" onClick={() => {setDraft(message.content || '');setEditing(true)}} title="Edit message"><Pencil size={13}/><span>Edit</span></button>
+          <button type="button" className="message-action-button delete" onClick={deleteThis} title="Delete message"><Trash2 size={13}/><span>Delete</span></button>
+        </>}
+      </div>
+    </div>
   </div></div>;
 }
 
@@ -391,28 +398,78 @@ function ChatPanel({ conversation, other, currentProfile, messages, onSend, onSe
 }
 
 
+function ProfileStats({ profileId }) {
+  const [stats, setStats] = useState({ followers: 0, following: 0, posts: 0 });
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState('');
+
+  useEffect(() => {
+    if (!profileId) return;
+    let alive = true;
+    const load = async () => {
+      const [followersResult, followingResult, postsResult] = await Promise.all([
+        supabase.from('user_follows').select('follower_id', { count: 'exact', head: true }).eq('following_id', profileId),
+        supabase.from('user_follows').select('following_id', { count: 'exact', head: true }).eq('follower_id', profileId),
+        supabase.from('posts').select('id', { count: 'exact', head: true }).eq('author_id', profileId),
+      ]);
+      if (!alive) return;
+      const failed = followersResult.error || followingResult.error || postsResult.error;
+      if (failed) setError('Could not load profile statistics.');
+      else {
+        setStats({
+          followers: followersResult.count || 0,
+          following: followingResult.count || 0,
+          posts: postsResult.count || 0,
+        });
+        setError('');
+      }
+      setLoading(false);
+    };
+    load();
+    const channel = supabase.channel(`profile-stats:${profileId}`)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'posts', filter: `author_id=eq.${profileId}` }, load)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'user_follows' }, load)
+      .subscribe();
+    return () => {
+      alive = false;
+      supabase.removeChannel(channel);
+    };
+  }, [profileId]);
+
+  return <div className="profile-dashboard-stats" aria-label="Profile statistics">
+    {error ? <span className="profile-stats-error">{error}</span> : <>
+      <div><strong>{loading ? '—' : stats.posts.toLocaleString()}</strong><span>Posts</span></div>
+      <div><strong>{loading ? '—' : stats.followers.toLocaleString()}</strong><span>Followers</span></div>
+      <div><strong>{loading ? '—' : stats.following.toLocaleString()}</strong><span>Following</span></div>
+    </>}
+  </div>;
+}
+
 function PublicProfileModal({ profile, onClose, isOnline, currentUserId }) {
   const [following, setFollowing] = useState(false);
   const [followers, setFollowers] = useState(0);
   const [followingCount, setFollowingCount] = useState(0);
+  const [postsCount, setPostsCount] = useState(0);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
   useEffect(() => {
     if (!profile?.id) return;
     let alive = true;
     const load = async () => {
-      const [followerResult, followingResult, edgeResult] = await Promise.all([
+      const [followerResult, followingResult, postsResult, edgeResult] = await Promise.all([
         supabase.from('user_follows').select('follower_id', { count: 'exact', head: true }).eq('following_id', profile.id),
         supabase.from('user_follows').select('following_id', { count: 'exact', head: true }).eq('follower_id', profile.id),
+        supabase.from('posts').select('id', { count: 'exact', head: true }).eq('author_id', profile.id),
         currentUserId && currentUserId !== profile.id
           ? supabase.from('user_follows').select('follower_id').eq('follower_id', currentUserId).eq('following_id', profile.id).maybeSingle()
           : Promise.resolve({ data: null, error: null }),
       ]);
       if (!alive) return;
-      const failed = followerResult.error || followingResult.error || edgeResult.error;
+      const failed = followerResult.error || followingResult.error || postsResult.error || edgeResult.error;
       if (failed) { setError(failed.message || 'Could not load follow details.'); return; }
       setFollowers(followerResult.count || 0);
       setFollowingCount(followingResult.count || 0);
+      setPostsCount(postsResult.count || 0);
       setFollowing(Boolean(edgeResult.data));
     };
     load();
@@ -440,7 +497,7 @@ function PublicProfileModal({ profile, onClose, isOnline, currentUserId }) {
     setBusy(false);
   };
   const links = (Array.isArray(profile?.bio_links) ? profile.bio_links : []).map((value, index) => ({ url: safeExternalUrl(value), label: `Link ${index + 1}` })).filter(item => item.url);
-  return <div className="modal-scrim" onMouseDown={e => e.target === e.currentTarget && onClose()}><div className="public-profile-modal"><button className="icon-button public-close" onClick={onClose}><X size={18}/></button><div className="public-banner" style={profile?.banner_url ? {backgroundImage:`url(${profile.banner_url})`} : {background:`linear-gradient(130deg,${profile?.profile_theme_color || '#335951'},#204346)`}}/><div className="public-profile-content" data-profile-style={profile?.profile_style || 'gradient'} style={{'--profile-accent':profile?.profile_theme_color || '#A3E6D3'}}><Avatar profile={profile} size="xl"/><h2>{profile?.display_name}</h2><span style={{color:profile?.username_color || '#A3E6D3'}}>@{profile?.username}</span><span className={isOnline?'profile-presence status-online':'profile-presence status-offline'}><i className={isOnline?'online-dot':'offline-dot'}/>{isOnline?'Online':'Offline'}</span><div className="profile-follow-stats"><span><b>{followers}</b> followers</span><span><b>{followingCount}</b> following</span></div>{currentUserId !== profile?.id && <button type="button" className={`primary-button profile-follow-button ${following?'is-following':''}`} onClick={toggleFollow} disabled={busy}>{busy?'Please wait…':following?'Following':'Follow'}</button>}<p>{profile?.bio || 'A Chatter member.'}</p>{profile?.profile_status && <small className="public-profile-status">{profile.profile_status}</small>}{links.length > 0 && <div className="profile-bio-links">{links.map((item,index)=><a key={`${item.url}-${index}`} href={item.url} target="_blank" rel="noopener noreferrer"><ArrowUp size={12}/>{new URL(item.url).hostname.replace(/^www\./,'')}</a>)}</div>}{error && <small className="profile-follow-error">{error}</small>}</div></div></div>;
+  return <div className="modal-scrim" onMouseDown={e => e.target === e.currentTarget && onClose()}><div className="public-profile-modal"><button className="icon-button public-close" onClick={onClose}><X size={18}/></button><div className="public-banner" style={profile?.banner_url ? {backgroundImage:`url(${profile.banner_url})`} : {background:`linear-gradient(130deg,${profile?.profile_theme_color || '#335951'},#204346)`}}/><div className="public-profile-content" data-profile-style={profile?.profile_style || 'gradient'} style={{'--profile-accent':profile?.profile_theme_color || '#A3E6D3'}}><Avatar profile={profile} size="xl"/><h2>{profile?.display_name}</h2><span style={{color:profile?.username_color || '#A3E6D3'}}>@{profile?.username}</span><span className={isOnline?'profile-presence status-online':'profile-presence status-offline'}><i className={isOnline?'online-dot':'offline-dot'}/>{isOnline?'Online':'Offline'}</span><div className="profile-follow-stats"><span><b>{followers.toLocaleString()}</b><small>Followers</small></span><span><b>{followingCount.toLocaleString()}</b><small>Following</small></span><span><b>{postsCount.toLocaleString()}</b><small>Posts</small></span></div>{currentUserId !== profile?.id && <button type="button" className={`primary-button profile-follow-button ${following?'is-following':''}`} onClick={toggleFollow} disabled={busy}>{busy?'Please wait…':following?'Following':'Follow'}</button>}<p>{profile?.bio || 'A Chatter member.'}</p>{profile?.profile_status && <small className="public-profile-status">{profile.profile_status}</small>}{links.length > 0 && <div className="profile-bio-links">{links.map((item,index)=><a key={`${item.url}-${index}`} href={item.url} target="_blank" rel="noopener noreferrer"><ArrowUp size={12}/>{new URL(item.url).hostname.replace(/^www\./,'')}</a>)}</div>}{error && <small className="profile-follow-error">{error}</small>}</div></div></div>;
 }
 
 function MediaViewer({ media, onClose }) {
@@ -1239,7 +1296,7 @@ function App() {
         {activeTab==='posts'&&<PostDashboard profile={profile} posts={posts} loadingPosts={loadingPosts} currentUserId={profile.id} profiles={profiles} customEmojis={customEmojis} onCreatePost={createPost} onOpenMedia={setMediaViewer} onNewChat={openNewChat}/>} 
         {activeTab==='appearance'&&<AppearanceDashboard appearance={appearance} onChange={setAppearance} currentUserId={profile.id} customEmojis={customEmojis} onCustomEmojisChange={setCustomEmojis} onReset={()=>{setAppearance(DEFAULT_APPEARANCE);notify('Appearance reset for this browser.');}}/>}
         {activeTab==='admin'&&isAdmin&&<AdminDashboard onlineUsers={onlineUsers} currentUserId={profile?.id} onNotify={notify}/>}
-        {activeTab==='profile'&&<section className="profile-dashboard"><span className="eyebrow">YOUR ACCOUNT</span><h1>Your <em>profile.</em></h1><div className="profile-dashboard-card" data-profile-style={profile?.profile_style || 'gradient'}><div className="profile-dashboard-banner" style={profile?.banner_url?{backgroundImage:`url(${profile.banner_url})`}:{background:`linear-gradient(130deg,${profile?.profile_theme_color || '#34544c'},#1d4140)`}}/><div className="profile-dashboard-info"><Avatar profile={profile} size="xl"/><div><h2>{profile?.display_name}</h2><span style={{color:profile?.username_color || '#A3E6D3'}}>@{profile?.username}</span><p>{profile?.bio||'Add a little about yourself.'}</p>{profile?.profile_status && <small className="profile-dashboard-status">{profile.profile_status}</small>}</div><button className="primary-button" onClick={()=>setShowProfile(true)}><Settings size={15}/> Edit profile</button></div></div><button className="profile-signout" onClick={signOut}><LogOut size={16}/> Sign out</button></section>}
+        {activeTab==='profile'&&<section className="profile-dashboard"><span className="eyebrow">YOUR ACCOUNT</span><h1>Your <em>profile.</em></h1><div className="profile-dashboard-card" data-profile-style={profile?.profile_style || 'gradient'}><div className="profile-dashboard-banner" style={profile?.banner_url?{backgroundImage:`url(${profile.banner_url})`}:{background:`linear-gradient(130deg,${profile?.profile_theme_color || '#34544c'},#1d4140)`}}/><div className="profile-dashboard-info"><Avatar profile={profile} size="xl"/><div><h2>{profile?.display_name}</h2><span style={{color:profile?.username_color || '#A3E6D3'}}>@{profile?.username}</span><p>{profile?.bio||'Add a little about yourself.'}</p>{profile?.profile_status && <small className="profile-dashboard-status">{profile.profile_status}</small>}</div><button className="primary-button" onClick={()=>setShowProfile(true)}><Settings size={15}/> Edit profile</button></div></div><ProfileStats profileId={profile?.id}/><button className="profile-signout" onClick={signOut}><LogOut size={16}/> Sign out</button></section>}
       </main></div>
     <nav className="mobile-bottom-nav">{tabs.map(t=><button key={t.id} className={activeTab===t.id?'active':''} onClick={()=>{setActiveTab(t.id);setMobileChatOpen(false);}}><t.icon size={20}/><span>{t.label}</span></button>)}</nav>
     {showProfile&&<ProfileModal profile={profile} onClose={()=>setShowProfile(false)} onSave={saveProfile} onSignOut={signOut}/>}
