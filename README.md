@@ -16,7 +16,7 @@ Chatter is a mobile-first messaging and social web app built with React, Vite an
 
 ### Community
 - Text, photo and video posts.
-- Likes, reposts, threaded comments and likes on individual comments.
+- Likes, reposts, threaded comments, live comment updates and likes on individual comments.
 - Polls on posts with live vote totals and percentage results.
 - @mentions and custom image emojis in community content.
 
