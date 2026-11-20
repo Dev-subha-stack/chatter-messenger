@@ -4,6 +4,7 @@ import {
   RefreshCw, RotateCcw, Search, ShieldCheck, Sun, Trash2, Type, UserPlus, Users
 } from 'lucide-react';
 import { supabase } from './supabase';
+import { EmojiSettings } from './SocialFeatures';
 
 export const DEFAULT_APPEARANCE = {
   theme: 'dark',
@@ -34,7 +35,7 @@ const timeLabel = value => {
 };
 const fullTime = value => value ? new Date(value).toLocaleString([], { dateStyle: 'medium', timeStyle: 'short' }) : '';
 
-export function AppearanceDashboard({ appearance, onChange, onReset }) {
+export function AppearanceDashboard({ appearance, onChange, onReset, currentUserId, customEmojis, onCustomEmojisChange }) {
   const update = (key, value) => onChange(current => ({ ...current, [key]: value }));
   const choices = (items, key) => <div className="appearance-options">{items.map(item => <button type="button" key={item.id} className={appearance[key] === item.id ? 'selected' : ''} onClick={() => update(key, item.id)}>{item.icon || null}<span>{item.label}</span>{appearance[key] === item.id && <Check size={14}/>}</button>)}</div>;
   return <section className="appearance-dashboard">
@@ -48,6 +49,7 @@ export function AppearanceDashboard({ appearance, onChange, onReset }) {
         <div className="appearance-card"><div className="appearance-card-title"><Activity size={17}/><div><b>Chat background</b><small>Personalise the conversation canvas</small></div></div>{choices([{id:'glow',label:'Aurora glow'},{id:'plain',label:'Plain'},{id:'grid',label:'Subtle grid'}], 'wallpaper')}</div>
         <div className="appearance-card"><div className="appearance-card-title"><Type size={17}/><div><b>Typeface</b><small>Set the text style for this browser</small></div></div>{choices([{id:'dm',label:'DM Sans'},{id:'manrope',label:'Manrope'},{id:'system',label:'System'}], 'font')}</div>
         <div className="appearance-card"><div className="appearance-card-title"><Activity size={17}/><div><b>Motion effects</b><small>Turn screen animations on or off</small></div></div>{choices([{id:'on',label:'On'},{id:'off',label:'Reduced motion'}], 'motion')}</div>
+        <div className="appearance-card"><EmojiSettings currentUserId={currentUserId} customEmojis={customEmojis || []} onChange={onCustomEmojisChange}/></div>
       </div>
       <aside className="appearance-preview-wrap"><span className="eyebrow">LIVE PREVIEW</span><div className="appearance-preview" data-bubble-style={appearance.bubbleStyle} style={{'--mint':APPEARANCE_ACCENTS[appearance.accent]?.primary || APPEARANCE_ACCENTS.mint.primary}}><div className="preview-top"><span className="preview-avatar">S</span><div><b>Sam</b><small>online now</small></div><i/></div><div className="preview-chat"><div className="preview-bubble theirs">Hey! How's your day going?</div><div className="preview-bubble mine">Pretty good. This looks nice!</div></div><div className="preview-input"><span>Write a message…</span><b>↑</b></div></div><p>Preview reflects your accent colour and message shape.</p></aside>
     </div>
@@ -62,6 +64,12 @@ export function AdminDashboard({ onlineUsers, currentUserId, onNotify }) {
   const [deletingId, setDeletingId] = useState('');
   const [error, setError] = useState('');
   const [selectedUser, setSelectedUser] = useState(null);
+  const [roles, setRoles] = useState([]);
+  const [roleAssignments, setRoleAssignments] = useState([]);
+  const [roleName, setRoleName] = useState('');
+  const [roleBadge, setRoleBadge] = useState('✦');
+  const [roleColor, setRoleColor] = useState('#A3E6D3');
+  const [savingRole, setSavingRole] = useState(false);
 
   const refresh = async (quiet = false) => {
     if (quiet) setRefreshing(true); else setLoading(true);
@@ -71,6 +79,14 @@ export function AdminDashboard({ onlineUsers, currentUserId, onNotify }) {
       if (invokeError) throw invokeError;
       if (data?.error) throw new Error(data.error);
       setDashboard(data || { users: [], audit: [], stats: { total: 0, verified: 0, joined_last_7_days: 0 } });
+      const [roleResult, assignmentResult] = await Promise.all([
+        supabase.from('chatter_roles').select('*').order('created_at', { ascending: true }),
+        supabase.from('profile_roles').select('user_id,role_id'),
+      ]);
+      if (roleResult.error) throw roleResult.error;
+      if (assignmentResult.error) throw assignmentResult.error;
+      setRoles(roleResult.data || []);
+      setRoleAssignments(assignmentResult.data || []);
     } catch (e) {
       setError(e?.message || 'Could not load admin data.');
     } finally {
@@ -105,6 +121,28 @@ export function AdminDashboard({ onlineUsers, currentUserId, onNotify }) {
     }
   };
 
+  const createRole = async event => {
+    event.preventDefault();
+    const name = roleName.trim();
+    if (!name) return;
+    setSavingRole(true); setError('');
+    const { data, error: roleError } = await supabase.from('chatter_roles').insert({ name, badge: roleBadge.trim() || '✦', color: roleColor, created_by: currentUserId }).select().single();
+    if (roleError) setError(roleError.code === '23505' ? 'That role name already exists.' : roleError.message);
+    else { setRoles(current => [...current, data]); setRoleName(''); onNotify?.('Custom role created.'); }
+    setSavingRole(false);
+  };
+
+  const setUserRole = async (user, role, checked) => {
+    const exists = roleAssignments.some(item => item.user_id === user.id && item.role_id === role.id);
+    if (checked === exists) return;
+    const result = checked
+      ? await supabase.from('profile_roles').insert({ user_id: user.id, role_id: role.id, assigned_by: currentUserId })
+      : await supabase.from('profile_roles').delete().eq('user_id', user.id).eq('role_id', role.id);
+    if (result.error) { setError(result.error.message); return; }
+    setRoleAssignments(items => checked ? [...items, { user_id: user.id, role_id: role.id }] : items.filter(item => !(item.user_id === user.id && item.role_id === role.id)));
+    onNotify?.(checked ? `Added ${role.name} badge to ${user.display_name || 'user'}.` : `Removed ${role.name} badge.`);
+  };
+
   const uniqueOnline = [...new Map((onlineUsers || []).filter(u => u?.user_id).map(u => [u.user_id, u])).values()];
   const onlineIds = new Set(uniqueOnline.map(u => u.user_id));
   const users = dashboard.users || [];
@@ -130,6 +168,16 @@ export function AdminDashboard({ onlineUsers, currentUserId, onNotify }) {
         {dashboard.audit?.length ? <div className="admin-audit-list">{dashboard.audit.map(log=><div className="admin-audit-row" key={log.id}><span className="audit-mark"><Trash2 size={14}/></span><span><b>{log.action === 'delete_user' ? 'Deleted account' : log.action}</b><small>{log.target_email || 'Account action'} · by {log.actor_email || 'admin'}</small></span><time>{timeLabel(log.created_at)}</time></div>)}</div> : <div className="admin-empty">No admin actions recorded yet.</div>}
       </div>
     </div>
+    <div className="admin-panel admin-roles-panel">
+      <div className="admin-panel-heading"><div><h2>Custom roles & badges</h2><p>Create a role, then assign or remove it from any member.</p></div><ShieldCheck size={18}/></div>
+      <form className="admin-role-create" onSubmit={createRole}>
+        <input value={roleName} onChange={event => setRoleName(event.target.value)} placeholder="Role name e.g. Moderator" maxLength={32} required/>
+        <input value={roleBadge} onChange={event => setRoleBadge(event.target.value)} placeholder="Badge e.g. ⭐" maxLength={8} aria-label="Badge symbol"/>
+        <label className="admin-role-color"><span>Colour</span><input type="color" value={roleColor} onChange={event => setRoleColor(event.target.value)}/></label>
+        <button className="primary-button" type="submit" disabled={savingRole || !roleName.trim()}>{savingRole ? 'Creating…' : 'Create role'}</button>
+      </form>
+      <div className="admin-role-list">{roles.map(role => <span className="admin-role-chip" key={role.id} style={{'--role-color':role.color}}>{role.badge} {role.name}</span>)}{!roles.length && <small>No custom roles created yet.</small>}</div>
+    </div>
     <div className="admin-panel admin-directory">
       <div className="admin-panel-heading"><div><h2>User directory</h2><p>Search accounts, inspect details or permanently remove a user</p></div><span className="admin-count">{filteredUsers.length} / {users.length}</span></div>
       <div className="admin-search"><Search size={17}/><input value={query} onChange={e=>setQuery(e.target.value)} placeholder="Search by name, username, email or user ID"/></div>
@@ -141,7 +189,7 @@ export function AdminDashboard({ onlineUsers, currentUserId, onNotify }) {
           <div className="admin-user-status"><span className={isOnline?'online-text':'offline-text'}><i/>{isOnline?'Online':'Offline'}</span><small>{user.email_confirmed_at?'Verified':'Unverified'}</small></div>
           <button className="admin-icon-action" title="Copy user ID" onClick={()=>{navigator.clipboard?.writeText(user.id).then(()=>onNotify?.('User ID copied.')).catch(()=>setError('Could not copy the user ID.'));}}><Copy size={15}/></button>
           <button className="admin-delete" title={user.is_admin?'Admin accounts are protected':'Delete user'} disabled={user.is_admin || user.id===currentUserId || deletingId===user.id} onClick={()=>deleteUser(user)}>{deletingId===user.id?<RefreshCw size={15} className="spinning"/>:<Trash2 size={15}/>}<span>{deletingId===user.id?'Deleting':'Delete'}</span></button>
-          {selectedUser?.id===user.id&&<div className="admin-user-details"><span><b>User ID</b><code>{user.id}</code></span><span><b>Last sign-in</b><small>{user.last_sign_in_at?fullTime(user.last_sign_in_at):'Never signed in'}</small></span><span><b>Account created</b><small>{fullTime(user.created_at)}</small></span></div>}
+          {selectedUser?.id===user.id&&<div className="admin-user-details"><span><b>User ID</b><code>{user.id}</code></span><span><b>Last sign-in</b><small>{user.last_sign_in_at?fullTime(user.last_sign_in_at):'Never signed in'}</small></span><span><b>Account created</b><small>{fullTime(user.created_at)}</small></span><div className="admin-user-role-controls"><b>Custom role badges</b>{roles.length ? roles.map(role=><label key={role.id}><input type="checkbox" checked={roleAssignments.some(item=>item.user_id===user.id&&item.role_id===role.id)} onChange={event=>setUserRole(user,role,event.target.checked)}/><span style={{'--role-color':role.color}}>{role.badge} {role.name}</span></label>) : <small>Create a role above first.</small>}</div></div>
         </div>;
       })}</div> : <div className="admin-empty">{query?'No accounts match your search.':'No registered accounts found.'}</div>}
       {dashboard.stats?.list_truncated&&<p className="admin-truncated">Showing the first 10,000 accounts. Pagination can be added for larger communities.</p>}

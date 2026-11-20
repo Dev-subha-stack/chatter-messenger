@@ -67,3 +67,74 @@ button,.primary-button,.icon-button,.quick-action,.chat-row{transition:transform
 @keyframes compression-spin{to{transform:rotate(360deg)}}
 .attachment-preview video{width:56px;height:44px;border-radius:7px;object-fit:cover;background:#080f12}
 @media(max-width:760px){.media-compression-status{padding:9px 10px}.compression-status-title{font-size:9px}.media-compression-status>small{font-size:8px}}
+
+
+/* Social interactions, replies, role badges and custom emoji settings */
+.avatar { position: relative; }
+.avatar-role-badge { position: absolute; right: -5px; bottom: -5px; display: grid; place-items: center; min-width: 17px; height: 17px; padding: 0 3px; border: 2px solid var(--panel, #122126); border-radius: 99px; background: var(--mint); color: #10201f; font-size: 10px; line-height: 1; }
+.social-avatar { width: 38px; height: 38px; flex: 0 0 38px; display: grid; place-items: center; overflow: hidden; border-radius: 50%; background: rgba(163,230,211,.14); color: var(--mint); font-weight: 700; }
+.social-avatar img { width: 100%; height: 100%; object-fit: cover; }
+.social-role-badges { display: flex; flex-wrap: wrap; gap: 5px; margin-top: 3px; }
+.social-role-badges span, .admin-role-chip, .admin-user-role-controls label span { border: 1px solid color-mix(in srgb, var(--role-color, var(--mint)) 35%, transparent); border-radius: 99px; padding: 2px 8px; background: color-mix(in srgb, var(--role-color, var(--mint)) 10%, transparent); color: var(--role-color, var(--mint)); font-size: 10px; font-weight: 700; }
+.post-interaction-bar { display: flex; align-items: center; gap: 8px; padding: 11px 0 2px; margin-top: 12px; border-top: 1px solid var(--line, rgba(255,255,255,.08)); }
+.post-interaction-bar button { display: inline-flex; align-items: center; gap: 7px; border: 0; border-radius: 9px; padding: 7px 10px; color: var(--muted, #98aaa9); background: transparent; font: inherit; font-size: 12px; cursor: pointer; }
+.post-interaction-bar button:hover, .post-interaction-bar button.active { background: rgba(163,230,211,.09); color: var(--mint); }
+.post-interaction-bar button.liked { color: #f18fa5; }
+.post-comments { display: grid; gap: 12px; margin-top: 12px; padding-top: 12px; border-top: 1px solid var(--line, rgba(255,255,255,.08)); }
+.post-comment-thread { display: grid; gap: 7px; margin-left: 18px; padding-left: 12px; border-left: 1px solid var(--line, rgba(255,255,255,.1)); }
+.post-comment-thread:first-child { margin-left: 0; padding-left: 0; border-left: 0; }
+.post-comment-row { display: flex; align-items: flex-start; gap: 9px; min-width: 0; }
+.post-comment-copy { min-width: 0; flex: 1; }
+.post-comment-copy b { font-size: 12px; }
+.post-comment-copy p { margin: 3px 0; font-size: 13px; line-height: 1.45; white-space: pre-wrap; overflow-wrap: anywhere; }
+.post-comment-copy small { color: var(--muted); font-size: 10px; }
+.comment-reply-button { display: inline-flex; align-items: center; gap: 4px; border: 0; background: transparent; color: var(--muted); font-size: 10px; cursor: pointer; }
+.post-comments-empty, .custom-emoji-empty { color: var(--muted); font-size: 12px; margin: 0; }
+.post-comment-form { display: grid; gap: 8px; }
+.post-comment-form textarea { width: 100%; min-height: 54px; resize: vertical; border: 1px solid var(--line); border-radius: 11px; padding: 10px 12px; background: var(--surface, rgba(255,255,255,.035)); color: var(--text); font: inherit; font-size: 13px; }
+.post-comment-actions { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+.emoji-inline { position: relative; }
+.comment-emoji-toggle { border: 0; border-radius: 8px; padding: 7px; background: transparent; color: var(--muted); cursor: pointer; }
+.emoji-inline-options, .chat-emoji-picker { display: flex; flex-wrap: wrap; gap: 4px; padding: 8px; border: 1px solid var(--line); border-radius: 12px; background: var(--surface-elevated, #17272b); box-shadow: 0 10px 28px rgba(0,0,0,.22); }
+.emoji-inline-options { position: absolute; z-index: 20; bottom: 35px; left: 0; min-width: 160px; }
+.emoji-inline-options button, .chat-emoji-picker button { border: 0; border-radius: 7px; padding: 6px; background: transparent; font-size: 17px; cursor: pointer; }
+.emoji-inline-options button:hover, .chat-emoji-picker button:hover { background: rgba(163,230,211,.12); }
+.mention-token { color: var(--mint); font-weight: 700; }
+.mention-suggestions { display: flex; flex-wrap: wrap; gap: 5px; padding: 5px; border: 1px solid var(--line); border-radius: 10px; background: var(--surface-elevated, #17272b); }
+.mention-suggestions button { display: flex; flex-direction: column; align-items: flex-start; gap: 1px; border: 0; border-radius: 7px; padding: 6px 9px; background: transparent; color: var(--mint); font: inherit; font-size: 12px; cursor: pointer; }
+.mention-suggestions button:hover { background: rgba(163,230,211,.1); }
+.mention-suggestions small { color: var(--muted); font-size: 10px; }
+.replying-strip, .message-reply-preview { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 7px 10px; border-left: 2px solid var(--mint); border-radius: 7px; background: rgba(163,230,211,.08); color: var(--muted); font-size: 11px; }
+.replying-strip span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.replying-strip button { flex: 0 0 auto; border: 0; background: transparent; color: var(--muted); cursor: pointer; }
+.message-reply-preview { display: grid; justify-content: stretch; margin-bottom: 7px; }
+.message-reply-preview small { color: var(--mint); font-size: 10px; }
+.message-reply-preview span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.message-meta { display: flex; align-items: center; gap: 6px; }
+.message-reply-action { display: inline-flex; border: 0; padding: 1px; background: transparent; color: var(--muted); cursor: pointer; opacity: .65; }
+.message-reply-action:hover { color: var(--mint); opacity: 1; }
+.chat-emoji-picker { margin-bottom: 8px; }
+.custom-emoji-settings { display: grid; gap: 12px; width: 100%; }
+.custom-emoji-form { display: grid; grid-template-columns: 1fr 1fr auto; gap: 8px; }
+.custom-emoji-form input { min-width: 0; width: 100%; border: 1px solid var(--line); border-radius: 9px; padding: 9px 10px; background: var(--surface, rgba(255,255,255,.04)); color: var(--text); font: inherit; font-size: 12px; }
+.custom-emoji-list { display: flex; flex-wrap: wrap; gap: 7px; }
+.custom-emoji-chip { display: inline-flex; align-items: center; gap: 7px; padding: 6px 8px; border: 1px solid var(--line); border-radius: 9px; }
+.custom-emoji-chip b { font-size: 19px; }
+.custom-emoji-chip small { color: var(--muted); font-size: 10px; }
+.custom-emoji-chip button { display: inline-flex; border: 0; background: transparent; color: var(--muted); cursor: pointer; }
+.admin-role-create { display: grid; grid-template-columns: 1.4fr .8fr auto auto; align-items: center; gap: 9px; }
+.admin-role-create > input { min-width: 0; border: 1px solid var(--line); border-radius: 9px; padding: 10px; background: var(--surface, rgba(255,255,255,.04)); color: var(--text); font: inherit; }
+.admin-role-color { display: flex; align-items: center; gap: 7px; color: var(--muted); font-size: 11px; }
+.admin-role-color input { width: 32px; height: 32px; border: 0; background: transparent; }
+.admin-role-list { display: flex; flex-wrap: wrap; gap: 7px; margin-top: 13px; }
+.admin-user-role-controls { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; grid-column: 1 / -1; padding-top: 8px; border-top: 1px solid var(--line); }
+.admin-user-role-controls > b { width: 100%; font-size: 11px; }
+.admin-user-role-controls label { display: inline-flex; align-items: center; gap: 5px; cursor: pointer; }
+.admin-user-role-controls label input { accent-color: var(--mint); }
+.admin-user-role-controls label span { font-size: 10px; }
+@media (max-width: 680px) {
+  .custom-emoji-form { grid-template-columns: 1fr 1fr; }
+  .custom-emoji-form button { grid-column: 1 / -1; }
+  .admin-role-create { grid-template-columns: 1fr 1fr; }
+  .admin-role-create .primary-button { grid-column: 1 / -1; }
+}
