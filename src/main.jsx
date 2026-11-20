@@ -3,14 +3,14 @@ import { createRoot } from 'react-dom/client';
 import {
   ArrowLeft, ArrowUp, Bell, Check, CheckCheck, ChevronDown, ChevronLeft, CircleHelp,
   ImagePlus, Info, LogOut, MessageCircle, MoreHorizontal, Paperclip, Pencil,
-  Plus, Search, Send, Settings, Smile, Sparkles, User, UserPlus, X, Camera,
+  Plus, Search, Send, Settings, Smile, Sparkles, User, UserPlus, X, Camera, BarChart3,
   Menu, Moon, Sun, CheckCircle2, Lock, Mail, ShieldCheck, Shield, Palette, PanelLeftClose, Home, MessageSquare, PlusCircle, UserCircle, BellRing, ArrowRight, Image, FileText, Eye, EyeOff, Newspaper, Play, Pause, Volume2, VolumeX, Maximize2, CornerDownRight, Trash2
 } from 'lucide-react';
 import { isSupabaseConfigured, supabase } from './supabase';
 import { AppearanceDashboard, AdminDashboard, DEFAULT_APPEARANCE, APPEARANCE_ACCENTS } from './AppearanceAdmin';
 import { AuthScreen, PasswordRecoveryModal } from './AuthFlow';
 import { compressMediaFile, formatMediaBytes } from './mediaCompressor';
-import { SocialPostCard, NotificationCenter, EmojiPicker, renderRichContent } from './SocialFeatures';
+import { SocialPostCard, NotificationCenter, EmojiPicker, PollCard, PollDraftEditor, renderRichContent } from './SocialFeatures';
 import './styles.css';
 
 const BRAND = 'Chatter';
@@ -43,6 +43,18 @@ const safeExternalUrl = value => {
     return ['http:', 'https:'].includes(parsed.protocol) ? parsed.href : null;
   } catch { return null; }
 };
+const hydratePollRows = async rows => {
+  const pollIds = [...new Set((rows || []).map(row => row.poll_id).filter(Boolean))];
+  if (!pollIds.length) return (rows || []).map(row => ({ ...row, poll: null }));
+  const [{ data: polls, error: pollError }, { data: options, error: optionError }] = await Promise.all([
+    supabase.from('chatter_polls').select('*').in('id', pollIds),
+    supabase.from('chatter_poll_options').select('*').in('poll_id', pollIds).order('position', { ascending: true }),
+  ]);
+  if (pollError) throw pollError;
+  if (optionError) throw optionError;
+  const byId = new Map((polls || []).map(poll => [poll.id, { ...poll, options: (options || []).filter(option => option.poll_id === poll.id) }]));
+  return (rows || []).map(row => ({ ...row, poll: row.poll_id ? (byId.get(row.poll_id) || null) : null }));
+};
 function CompressionStatus({ status }) {
   if (!status) return null;
   const active = status.phase === 'compressing';
@@ -71,6 +83,8 @@ function ProfileModal({ profile, onClose, onSave, onSignOut }) {
   const [username, setUsername] = useState(profile?.username || '');
   const [bio, setBio] = useState(profile?.bio || '');
   const [bioLinks, setBioLinks] = useState((profile?.bio_links || []).join('\n'));
+  const [profileStatus, setProfileStatus] = useState(profile?.profile_status || '');
+  const [profileThemeColor, setProfileThemeColor] = useState(profile?.profile_theme_color || '#A3E6D3');
   const [usernameColor, setUsernameColor] = useState(profile?.username_color || '#A3E6D3');
   const [compressMedia, setCompressMedia] = useState(localStorage.getItem('chatter-compress-media') !== 'false');
   const [avatar, setAvatar] = useState(null);
@@ -91,7 +105,7 @@ function ProfileModal({ profile, onClose, onSave, onSignOut }) {
   const save = async e => {
     e.preventDefault(); setBusy(true); setError('');
     if (!/^#[0-9a-fA-F]{6}$/.test(usernameColor)) { setError('Enter a valid 6-digit HEX colour.'); setBusy(false); return; }
-    try { await onSave({ displayName, username, bio, bioLinks, usernameColor, compressMedia, avatar, banner }, setCompression); onClose(); }
+    try { await onSave({ displayName, username, bio, bioLinks, profileStatus, profileThemeColor, usernameColor, compressMedia, avatar, banner }, setCompression); onClose(); }
     catch (e2) { setError(e2.message || 'Could not save your profile.'); }
     finally { setBusy(false); }
   };
@@ -105,7 +119,7 @@ function ProfileModal({ profile, onClose, onSave, onSignOut }) {
           <input ref={bannerInput} type="file" accept="image/*" hidden onChange={e => readFile(e.target.files?.[0], setBanner, setBannerPreview)}/>
         </div>
         <div className="avatar-edit-row"><div className="avatar-wrap"><Avatar profile={{...profile, avatar_url: avatarPreview, display_name: displayName}} size="xl"/><button type="button" className="camera-bubble" onClick={() => avatarInput.current?.click()}><Camera size={14}/></button><input ref={avatarInput} type="file" accept="image/*" hidden onChange={e => readFile(e.target.files?.[0], setAvatar, setAvatarPreview)}/></div><div><strong>{displayName || 'Your name'}</strong><span>Profile photo</span></div></div>
-        <div className="profile-fields"><label>Display name<input value={displayName} onChange={e => setDisplayName(e.target.value)} maxLength={32} placeholder="Your name" required/></label><label>Username<div className="username-input"><span>@</span><input value={username} onChange={e => setUsername(e.target.value.toLowerCase().replace(/[^a-z0-9_]/g, ''))} maxLength={24} minLength={3} placeholder="username" required/></div></label><label className="compress-setting"><span>Compress photos and videos before upload</span><input type="checkbox" checked={compressMedia} onChange={e=>setCompressMedia(e.target.checked)}/></label><label>About<textarea value={bio} onChange={e => setBio(e.target.value)} rows={3} maxLength={100} placeholder="A little about you…"/></label><label>Profile links<textarea value={bioLinks} onChange={e => setBioLinks(e.target.value)} rows={3} maxLength={500} placeholder="yourwebsite.com\ninstagram.com/username"/><small className="field-hint">Add up to 5 links, one per line. Links open in a new tab.</small></label><label>Username colour<div className="username-colour-control"><input aria-label="Choose username colour" type="color" value={usernameColor} onChange={e=>setUsernameColor(e.target.value)}/><input aria-label="Username colour HEX" value={usernameColor} onChange={e=>/^#[0-9a-fA-F]{0,6}$/.test(e.target.value)&&setUsernameColor(e.target.value)} maxLength={7}/><span className="username-live-preview" style={{color:usernameColor}}>@{username || 'yourname'}</span></div><div className="colour-presets">{['#A3E6D3','#FF5733','#FFC300','#7B61FF','#42A5F5','#F06292','#8BC34A','#FFFFFF'].map(c=><button type="button" key={c} aria-label={c} style={{background:c}} onClick={()=>setUsernameColor(c)}/>)}</div></label></div>
+        <div className="profile-fields"><label>Display name<input value={displayName} onChange={e => setDisplayName(e.target.value)} maxLength={32} placeholder="Your name" required/></label><label>Username<div className="username-input"><span>@</span><input value={username} onChange={e => setUsername(e.target.value.toLowerCase().replace(/[^a-z0-9_]/g, ''))} maxLength={24} minLength={3} placeholder="username" required/></div></label><label className="compress-setting"><span>Compress photos and videos before upload</span><input type="checkbox" checked={compressMedia} onChange={e=>setCompressMedia(e.target.checked)}/></label><label>About<textarea value={bio} onChange={e => setBio(e.target.value)} rows={3} maxLength={100} placeholder="A little about you…"/></label><label>Profile links<textarea value={bioLinks} onChange={e => setBioLinks(e.target.value)} rows={3} maxLength={500} placeholder="yourwebsite.com\ninstagram.com/username"/><small className="field-hint">Add up to 5 links, one per line. Links open in a new tab.</small></label><label>Profile status<input value={profileStatus} onChange={e => setProfileStatus(e.target.value)} maxLength={80} placeholder="What are you up to?"/></label><label>Profile theme colour<div className="username-colour-control"><input type="color" aria-label="Profile theme colour" value={profileThemeColor} onChange={e => setProfileThemeColor(e.target.value)}/><span className="username-live-preview" style={{color:profileThemeColor}}>Your profile accent</span></div></label><label>Username colour<div className="username-colour-control"><input aria-label="Choose username colour" type="color" value={usernameColor} onChange={e=>setUsernameColor(e.target.value)}/><input aria-label="Username colour HEX" value={usernameColor} onChange={e=>/^#[0-9a-fA-F]{0,6}$/.test(e.target.value)&&setUsernameColor(e.target.value)} maxLength={7}/><span className="username-live-preview" style={{color:usernameColor}}>@{username || 'yourname'}</span></div><div className="colour-presets">{['#A3E6D3','#FF5733','#FFC300','#7B61FF','#42A5F5','#F06292','#8BC34A','#FFFFFF'].map(c=><button type="button" key={c} aria-label={c} style={{background:c}} onClick={()=>setUsernameColor(c)}/>)}</div></label></div>
         <CompressionStatus status={compression}/>
         {error && <div className="form-error">{error}</div>}
         <div className="modal-actions"><button type="button" className="text-button danger" onClick={onSignOut}><LogOut size={16}/> Sign out</button><button className="primary-button" disabled={busy}>{busy ? 'Saving…' : 'Save changes'}<Check size={16}/></button></div>
@@ -157,6 +171,34 @@ function MessageBubble({ message, mine, onOpenMedia, onReply, replyMessage, curr
   const quotedSenderId = quote?.sender_id || message.reply_to_sender_id;
   const quotedSender = quotedSenderId === currentProfile?.id ? 'You' : (quotedSenderId === other?.id ? (other?.display_name || 'message') : 'message');
   const quotedContent = quote?.deleted_at ? 'This message was deleted' : (quote?.content || message.reply_to_content || quote?.attachment_name || (quote?.attachment_type?.startsWith('image/') ? 'Photo' : quote?.attachment_type?.startsWith('video/') ? 'Video' : 'Original message'));
+  const [messageReactions, setMessageReactions] = useState([]);
+  const [reactionPickerOpen, setReactionPickerOpen] = useState(false);
+  const [reactionBusy, setReactionBusy] = useState(false);
+  const reactionChoices = ['❤️','😂','👍','🔥','😮','👏'];
+  useEffect(() => {
+    if (!message.id) return;
+    let alive = true;
+    const refresh = async () => {
+      const { data, error } = await supabase.from('message_reactions').select('message_id,user_id,emoji').eq('message_id', message.id);
+      if (alive && !error) setMessageReactions(data || []);
+    };
+    refresh();
+    const channel = supabase.channel(`message-reactions:${message.id}`)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'message_reactions', filter: `message_id=eq.${message.id}` }, refresh)
+      .subscribe();
+    return () => { alive = false; supabase.removeChannel(channel); };
+  }, [message.id]);
+  const toggleReaction = async emoji => {
+    if (reactionBusy || message.deleted_at) return;
+    setReactionBusy(true); setReactionPickerOpen(false);
+    const exists = messageReactions.some(row => row.user_id === currentProfile?.id && row.emoji === emoji);
+    const result = exists
+      ? await supabase.from('message_reactions').delete().eq('message_id', message.id).eq('user_id', currentProfile.id).eq('emoji', emoji)
+      : await supabase.from('message_reactions').insert({ message_id: message.id, user_id: currentProfile.id, emoji });
+    if (result.error) window.alert(result.error.message || 'Could not save reaction.');
+    else setMessageReactions(rows => exists ? rows.filter(row => !(row.user_id === currentProfile.id && row.emoji === emoji)) : [...rows, { message_id: message.id, user_id: currentProfile.id, emoji }]);
+    setReactionBusy(false);
+  };
   const saveEdit = async () => {
     const next = draft.trim();
     if (!next || next === message.content) { setEditing(false); return; }
@@ -179,8 +221,11 @@ function MessageBubble({ message, mine, onOpenMedia, onReply, replyMessage, curr
           : <a className="message-attachment-file" href={message.attachment_url} target="_blank" rel="noreferrer"><FileText size={18}/><span>{message.attachment_name || 'Download file'}</span><ArrowUp size={13}/></a>)}
       {editing
         ? <div className="message-edit-box"><textarea value={draft} onChange={event => setDraft(event.target.value)} maxLength={4000} rows={Math.min(5,Math.max(2,draft.split(String.fromCharCode(10)).length))}/><div><button type="button" onClick={() => {setEditing(false);setDraft(message.content || '')}}>Cancel</button><button type="button" onClick={saveEdit} disabled={!draft.trim()}>Save</button></div></div>
-        : message.content && (!message.attachment_url || message.content !== message.attachment_name) && <span>{renderRichContent(message.content, customEmojis)}</span>}
+        : message.content && message.content !== '📊 Poll' && (!message.attachment_url || message.content !== message.attachment_name) && <span>{renderRichContent(message.content, customEmojis)}</span>}
+      {message.poll && <PollCard poll={message.poll} currentUserId={currentProfile?.id}/>}
     </>}
+    {messageReactions.length > 0 && <div className="message-reactions">{[...new Set(messageReactions.map(row => row.emoji))].map(emoji => { const rows = messageReactions.filter(row => row.emoji === emoji); const mineReaction = rows.some(row => row.user_id === currentProfile?.id); return <button type="button" key={emoji} className={mineReaction ? 'selected' : ''} onClick={() => toggleReaction(emoji)} disabled={reactionBusy}><span>{emoji}</span><b>{rows.length}</b></button>; })}</div>}
+    {!message.deleted_at && <div className="message-reaction-tools"><div className="message-reaction-picker-wrap"><button type="button" className="message-reaction-add" onClick={() => setReactionPickerOpen(value => !value)} aria-label="Add a reaction" title="Add reaction"><Smile size={13}/></button>{reactionPickerOpen && <div className="message-reaction-popover">{reactionChoices.map(emoji => <button type="button" key={emoji} onClick={() => toggleReaction(emoji)}>{emoji}</button>)}</div>}</div></div>}
     <div className="message-meta"><time>{timeLabel(message.created_at)}{message.edited_at && !message.deleted_at ? ' · edited' : ''}</time>{mine && <CheckCheck size={14} className="read-tick"/>}<button type="button" className="message-reply-action" onClick={onReply} title="Reply to message"><CornerDownRight size={13}/></button>{mine && !message.deleted_at && !editing && <div className="message-actions-wrap"><button type="button" className="message-reply-action" title="Message options" onClick={() => setMenuOpen(value => !value)}><MoreHorizontal size={15}/></button>{menuOpen && <div className="message-actions-menu"><button type="button" onClick={() => {setDraft(message.content || '');setEditing(true);setMenuOpen(false)}}><Pencil size={13}/> Edit</button><button type="button" className="danger" onClick={deleteThis}><Trash2 size={13}/> Delete</button></div>}</div>}</div>
   </div></div>;
 }
@@ -196,6 +241,7 @@ function ChatPanel({ conversation, other, currentProfile, messages, onSend, onSe
   const [compression, setCompression] = useState(null);
   const [replyTo, setReplyTo] = useState(null);
   const [emojiOpen, setEmojiOpen] = useState(false);
+  const [pollDraft, setPollDraft] = useState(null);
   const [otherTyping,setOtherTyping] = useState(false);
   const fileInputRef = useRef(null);
   const endRef = useRef(null); const inputRef = useRef(null);
@@ -268,7 +314,9 @@ function ChatPanel({ conversation, other, currentProfile, messages, onSend, onSe
   const submit = async event => {
     event.preventDefault();
     const value = draft.trim();
-    if ((!value && !selectedFile) || sending || uploading || compression?.phase === 'compressing') return;
+    if ((!value && !selectedFile && !pollDraft) || sending || uploading || compression?.phase === 'compressing') return;
+    if (selectedFile && pollDraft) { window.alert('Send a poll separately from a file attachment.'); return; }
+    if (pollDraft && (!pollDraft.question.trim() || pollDraft.options.filter(item => item.trim()).length < 2)) { window.alert('Add a poll question and at least two options.'); return; }
     setSending(true);
     try {
       if (selectedFile) {
@@ -276,8 +324,8 @@ function ChatPanel({ conversation, other, currentProfile, messages, onSend, onSe
         await onSendFile(selectedFile,value,replyTo?.id || null,replyTo || null);
         if (filePreview) URL.revokeObjectURL(filePreview);
         setSelectedFile(null);setFilePreview('');setCompression(null);
-      } else await onSend(value,replyTo?.id || null,replyTo || null);
-      setDraft('');setReplyTo(null);updateDraft('');
+      } else await onSend(pollDraft && !value ? '📊 Poll' : value,replyTo?.id || null,replyTo || null,pollDraft);
+      setDraft('');setReplyTo(null);setPollDraft(null);updateDraft('');
     } catch (error) { window.alert(error.message || 'Message could not be sent.'); }
     finally { setSending(false);setUploading(false);inputRef.current?.focus(); }
   };
@@ -292,12 +340,13 @@ function ChatPanel({ conversation, other, currentProfile, messages, onSend, onSe
     <form className="composer" onSubmit={submit}>
       {selectedFile && <div className="attachment-preview">{filePreview && selectedFile.type.startsWith('image/') ? <img src={filePreview} alt="Preview"/> : filePreview && selectedFile.type.startsWith('video/') ? <video src={filePreview} muted playsInline/> : <FileText size={19}/>}<span><b>{selectedFile.name}</b><small>{formatMediaBytes(selectedFile.size)} · Ready to send</small></span><button type="button" className="icon-button" onClick={()=>{if(filePreview)URL.revokeObjectURL(filePreview);setSelectedFile(null);setFilePreview('');setCompression(null);}}><X size={16}/></button></div>}
       <CompressionStatus status={compression}/>
+      {pollDraft && <PollDraftEditor value={pollDraft} onChange={setPollDraft} disabled={sending}/ >}
       {replyTo && <div className="replying-strip"><span>Replying to {replyTo.sender_id === currentProfile?.id ? 'your message' : (other?.display_name || 'this person')}: {replyTo.deleted_at ? 'This message was deleted' : (replyTo.content || replyTo.attachment_name || 'Attachment')}</span><button type="button" onClick={() => setReplyTo(null)}><X size={14}/></button></div>}
       {mentionCandidates.length > 0 && <div className="mention-suggestions">{mentionCandidates.map(person => <button type="button" key={person.id} onClick={() => chooseMention(person)}>@{person.username}<small>{person.display_name}</small></button>)}</div>}
       {emojiOpen && <EmojiPicker customEmojis={customEmojis || []} onSelect={value => updateDraft(`${draft}${value}`)}/>}
       {uploading && <div className="upload-progress"><i/></div>}
       <input ref={fileInputRef} type="file" hidden accept="image/*,video/mp4,video/webm,video/quicktime,image/gif,application/pdf,text/plain" onChange={e=>{chooseFile(e.target.files?.[0]);e.target.value='';}}/>
-      <div className="composer-inner"><button type="button" className="composer-tool" title="Attach media (5 MB max)" onClick={()=>fileInputRef.current?.click()} disabled={compression?.phase==='compressing'||uploading}><Paperclip size={19}/></button><textarea ref={inputRef} value={draft} onChange={e => updateDraft(e.target.value)} onKeyDown={e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); submit(e); } }} rows={1} placeholder={`Message ${other?.display_name || 'your friend'}…`} maxLength={4000}/><button type="button" className="composer-tool emoji-tool" title="Emoji" onClick={() => setEmojiOpen(value => !value)}><Smile size={19}/></button><button className="send-button" disabled={(!draft.trim()&&!selectedFile) || sending} title="Send message"><Send size={16}/></button></div><div className="composer-hint"><span>Up to 5 MB · Images, videos, GIFs, PDF, TXT</span><span>{draft.length}/4000</span></div></form>
+      <div className="composer-inner"><button type="button" className="composer-tool" title="Attach media (5 MB max)" onClick={()=>fileInputRef.current?.click()} disabled={compression?.phase==='compressing'||uploading}><Paperclip size={19}/></button><textarea ref={inputRef} value={draft} onChange={e => updateDraft(e.target.value)} onKeyDown={e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); submit(e); } }} rows={1} placeholder={`Message ${other?.display_name || 'your friend'}…`} maxLength={4000}/><button type="button" className="composer-tool" title="Create a poll" disabled={Boolean(selectedFile) || sending} onClick={() => setPollDraft(value => value ? null : ({ question: '', options: ['', ''], allowMultiple: false }))}><BarChart3 size={18}/></button><button type="button" className="composer-tool emoji-tool" title="Emoji" onClick={() => setEmojiOpen(value => !value)}><Smile size={19}/></button><button className="send-button" disabled={(!draft.trim()&&!selectedFile&&!pollDraft) || sending} title="Send message"><Send size={16}/></button></div><div className="composer-hint"><span>Up to 5 MB · Images, videos, GIFs, PDF, TXT</span><span>{draft.length}/4000</span></div></form>
     {showDetails && <div className="details-popover"><div className="details-banner" style={other?.banner_url ? {backgroundImage:`url(${other.banner_url})`} : {}}/><Avatar profile={other} size="xl"/><h3>{other?.display_name}</h3><span style={{color:other?.username_color || '#A3E6D3'}}>@{other?.username}</span><p>{other?.bio || 'No bio yet.'}</p><button className="text-button" onClick={() => {setShowDetails(false);onOpenProfile();}}>View profile <ArrowUp size={13}/></button></div>}
     {showWallpaper && <ChatWallpaperModal wallpaper={wallpaper} onClose={() => setShowWallpaper(false)} onSave={async (value,onProgress) => { await onSaveWallpaper(value,onProgress); setShowWallpaper(false); }}/>}
   </main>;
@@ -353,7 +402,7 @@ function PublicProfileModal({ profile, onClose, isOnline, currentUserId }) {
     setBusy(false);
   };
   const links = (Array.isArray(profile?.bio_links) ? profile.bio_links : []).map((value, index) => ({ url: safeExternalUrl(value), label: `Link ${index + 1}` })).filter(item => item.url);
-  return <div className="modal-scrim" onMouseDown={e => e.target === e.currentTarget && onClose()}><div className="public-profile-modal"><button className="icon-button public-close" onClick={onClose}><X size={18}/></button><div className="public-banner" style={profile?.banner_url ? {backgroundImage:`url(${profile.banner_url})`} : {}}/><div className="public-profile-content"><Avatar profile={profile} size="xl"/><h2>{profile?.display_name}</h2><span style={{color:profile?.username_color || '#A3E6D3'}}>@{profile?.username}</span><span className={isOnline?'profile-presence status-online':'profile-presence status-offline'}><i className={isOnline?'online-dot':'offline-dot'}/>{isOnline?'Online':'Offline'}</span><div className="profile-follow-stats"><span><b>{followers}</b> followers</span><span><b>{followingCount}</b> following</span></div>{currentUserId !== profile?.id && <button type="button" className={`primary-button profile-follow-button ${following?'is-following':''}`} onClick={toggleFollow} disabled={busy}>{busy?'Please wait…':following?'Following':'Follow'}</button>}<p>{profile?.bio || 'A Chatter member.'}</p>{links.length > 0 && <div className="profile-bio-links">{links.map((item,index)=><a key={`${item.url}-${index}`} href={item.url} target="_blank" rel="noopener noreferrer"><ArrowUp size={12}/>{new URL(item.url).hostname.replace(/^www\./,'')}</a>)}</div>}{error && <small className="profile-follow-error">{error}</small>}</div></div></div>;
+  return <div className="modal-scrim" onMouseDown={e => e.target === e.currentTarget && onClose()}><div className="public-profile-modal"><button className="icon-button public-close" onClick={onClose}><X size={18}/></button><div className="public-banner" style={profile?.banner_url ? {backgroundImage:`url(${profile.banner_url})`} : {}}/><div className="public-profile-content"><Avatar profile={profile} size="xl"/><h2>{profile?.display_name}</h2><span style={{color:profile?.username_color || '#A3E6D3'}}>@{profile?.username}</span><span className={isOnline?'profile-presence status-online':'profile-presence status-offline'}><i className={isOnline?'online-dot':'offline-dot'}/>{isOnline?'Online':'Offline'}</span><div className="profile-follow-stats"><span><b>{followers}</b> followers</span><span><b>{followingCount}</b> following</span></div>{currentUserId !== profile?.id && <button type="button" className={`primary-button profile-follow-button ${following?'is-following':''}`} onClick={toggleFollow} disabled={busy}>{busy?'Please wait…':following?'Following':'Follow'}</button>}<p>{profile?.bio || 'A Chatter member.'}</p>{profile?.profile_status && <small className="public-profile-status">{profile.profile_status}</small>}{links.length > 0 && <div className="profile-bio-links">{links.map((item,index)=><a key={`${item.url}-${index}`} href={item.url} target="_blank" rel="noopener noreferrer"><ArrowUp size={12}/>{new URL(item.url).hostname.replace(/^www\./,'')}</a>)}</div>}{error && <small className="profile-follow-error">{error}</small>}</div></div></div>;
 }
 
 function MediaViewer({ media, onClose }) {
@@ -368,6 +417,7 @@ function MediaViewer({ media, onClose }) {
   useEffect(() => {
     if (!media) return;
     setPlaying(false); setMuted(true); setVolume(1); setCurrentTime(0); setDuration(0);
+    if (videoRef.current) { videoRef.current.pause(); videoRef.current.currentTime = 0; }
     const onKey = event => { if (event.key === 'Escape') onClose(); };
     window.addEventListener('keydown', onKey);
     const previous = document.body.style.overflow;
@@ -394,6 +444,7 @@ function MediaViewer({ media, onClose }) {
   const toggleFullscreen = async () => {
     try {
       if (document.fullscreenElement) await document.exitFullscreen?.();
+      else if (videoRef.current?.webkitEnterFullscreen) videoRef.current.webkitEnterFullscreen();
       else await stageRef.current?.requestFullscreen?.();
     } catch (error) { console.warn('Fullscreen is unavailable:', error); }
   };
@@ -402,7 +453,7 @@ function MediaViewer({ media, onClose }) {
     <button className="media-viewer-close" onClick={onClose} aria-label="Close media viewer"><X size={22}/></button>
     <div className={`media-viewer-stage ${media.type === 'video' ? 'has-custom-player' : ''}`} ref={stageRef}>
       {media.type === 'video' ? <>
-        <video ref={videoRef} src={media.src} autoPlay muted={muted} playsInline preload="metadata" onClick={togglePlay} onPlay={() => setPlaying(true)} onPause={() => setPlaying(false)} onTimeUpdate={event => setCurrentTime(event.currentTarget.currentTime || 0)} onLoadedMetadata={event => setDuration(event.currentTarget.duration || 0)} onVolumeChange={event => { setMuted(event.currentTarget.muted); setVolume(event.currentTarget.volume); }} onEnded={() => setPlaying(false)}/>
+        <video ref={videoRef} src={media.src} muted={muted} playsInline webkit-playsinline="true" preload="metadata" onClick={togglePlay} onPlay={() => setPlaying(true)} onPause={() => setPlaying(false)} onTimeUpdate={event => setCurrentTime(event.currentTarget.currentTime || 0)} onLoadedMetadata={event => setDuration(event.currentTarget.duration || 0)} onVolumeChange={event => { setMuted(event.currentTarget.muted); setVolume(event.currentTarget.volume); }} onEnded={() => setPlaying(false)}/>
         <div className="custom-video-controls" onClick={event => event.stopPropagation()}>
           <button type="button" onClick={togglePlay} aria-label={playing ? 'Pause video' : 'Play video'}>{playing ? <Pause size={18}/> : <Play size={18}/>}</button>
           <span className="video-time">{formatTime(currentTime)}</span>
@@ -487,6 +538,7 @@ function HomeDashboard({ profile, conversations, profiles, posts, loadingPosts, 
 function PostDashboard({ profile, posts, loadingPosts, onCreatePost, onOpenMedia, onNewChat, currentUserId, profiles, customEmojis }) {
   const [content, setContent] = useState('');
   const [selectedMedia, setSelectedMedia] = useState(null);
+  const [pollDraft, setPollDraft] = useState(null);
   const [previewUrl, setPreviewUrl] = useState('');
   const [compression, setCompression] = useState(null);
   const [busy, setBusy] = useState(false);
@@ -527,9 +579,10 @@ function PostDashboard({ profile, posts, loadingPosts, onCreatePost, onOpenMedia
   const submit = async event => {
     event.preventDefault();
     const cleaned = content.trim();
-    if ((!cleaned && !selectedMedia) || busy) return;
+    if ((!cleaned && !selectedMedia && !pollDraft) || busy) return;
+    if (pollDraft && (!pollDraft.question.trim() || pollDraft.options.filter(item => item.trim()).length < 2)) { setError('Add a poll question and at least two options.'); return; }
     setBusy(true); setError('');
-    try { await onCreatePost(cleaned, selectedMedia); setContent(''); clearMedia(); }
+    try { await onCreatePost(cleaned, selectedMedia, pollDraft); setContent(''); clearMedia(); setPollDraft(null); }
     catch (caught) { setError(caught?.message || 'Could not publish your post.'); }
     finally { setBusy(false); }
   };
@@ -540,8 +593,9 @@ function PostDashboard({ profile, posts, loadingPosts, onCreatePost, onOpenMedia
     <form className="post-composer" onSubmit={submit}>
       <div className="post-composer-head"><Avatar profile={profile} size="md"/><span>Posting as <b>{profile?.display_name || 'you'}</b></span></div>
       <textarea value={content} onChange={event => setContent(event.target.value)} maxLength={1000} rows={4} placeholder="What's happening? Share an update…" aria-label="Write a post"/>
+      {pollDraft && <PollDraftEditor value={pollDraft} onChange={setPollDraft} disabled={busy}/ >}
       {selectedMedia && <div className="post-composer-media">{selectedMedia.type.startsWith('image/') ? <img src={previewUrl} alt="Post preview"/> : <video src={previewUrl} muted playsInline loop/>}<span>{selectedMedia.name} · {formatMediaBytes(selectedMedia.size)}</span><button type="button" className="icon-button" onClick={clearMedia} aria-label="Remove attachment"><X size={16}/></button></div>}
-      <div className="post-composer-footer"><span>{content.length}/1000 · {selectedMedia ? '1 attachment' : 'No attachment'}</span><div><input ref={fileRef} type="file" hidden accept="image/*,video/mp4,video/webm,video/quicktime" onChange={event=>{chooseMedia(event.target.files?.[0]);event.target.value='';}}/><button type="button" className="composer-tool" onClick={()=>fileRef.current?.click()} title="Attach a photo or video" disabled={busy}><ImagePlus size={18}/></button><button type="submit" className="primary-button" disabled={(!content.trim()&&!selectedMedia)||busy}>{busy ? 'Preparing…' : 'Publish post'}<ArrowUp size={15}/></button></div></div>
+      <div className="post-composer-footer"><span>{content.length}/1000 · {selectedMedia ? '1 attachment' : 'No attachment'}</span><div><input ref={fileRef} type="file" hidden accept="image/*,video/mp4,video/webm,video/quicktime" onChange={event=>{chooseMedia(event.target.files?.[0]);event.target.value='';}}/><button type="button" className="composer-tool" onClick={()=>fileRef.current?.click()} title="Attach a photo or video" disabled={busy}><ImagePlus size={18}/></button><button type="button" className="composer-tool" title="Create a poll" onClick={()=>setPollDraft(value=>value?null:({question:'',options:['',''],allowMultiple:false}))} disabled={busy}><BarChart3 size={18}/></button><button type="submit" className="primary-button" disabled={(!content.trim()&&!selectedMedia&&!pollDraft)||busy}>{busy ? 'Preparing…' : 'Publish post'}<ArrowUp size={15}/></button></div></div>
       <CompressionStatus status={compression}/>
       {error && <div className="form-error" role="alert">{error}</div>}
     </form>
@@ -654,7 +708,7 @@ function App() {
     if (showLoader) setLoadingPosts(true);
     try {
       const { data, error } = await supabase.from('posts')
-        .select('id,author_id,content,created_at,media_path,media_type,media_name,media_size,author:profiles!posts_author_id_fkey(id,display_name,username,avatar_url,username_color)')
+        .select('id,author_id,content,created_at,media_path,media_type,media_name,media_size,poll_id,author:profiles!posts_author_id_fkey(id,display_name,username,avatar_url,username_color)')
         .order('created_at', { ascending: false })
         .limit(50);
       if (error) throw error;
@@ -663,14 +717,15 @@ function App() {
         const { data: signed } = await supabase.storage.from('post-media').createSignedUrl(post.media_path, 3600);
         return { ...post, media_url: signed?.signedUrl || null };
       }));
-      const authorIds = [...new Set(hydrated.map(post => post.author_id).filter(Boolean))];
+      const withPolls = await hydratePollRows(hydrated);
+      const authorIds = [...new Set(withPolls.map(post => post.author_id).filter(Boolean))];
       if (authorIds.length) {
         const { data: roleRows } = await supabase.from('profile_roles').select('user_id,role:chatter_roles(id,name,badge,color)').in('user_id', authorIds);
         const badgesByUser = new Map();
         (roleRows || []).forEach(row => badgesByUser.set(row.user_id, [...(badgesByUser.get(row.user_id) || []), row.role].filter(Boolean)));
-        hydrated.forEach(post => { post.author = { ...post.author, badges: badgesByUser.get(post.author_id) || [] }; });
+        withPolls.forEach(post => { post.author = { ...post.author, badges: badgesByUser.get(post.author_id) || [] }; });
       }
-      setPosts(hydrated);
+      setPosts(withPolls);
     } catch (error) {
       console.error('Could not load Chatter posts:', error);
       notify('Could not load community posts.');
@@ -862,11 +917,12 @@ function App() {
     (async () => {
       const { data, error } = await supabase.from('messages').select('*').eq('conversation_id', active.id).order('created_at', {ascending:true}).limit(200);
       if (error) { notify(error.message); } else if (alive) {
-        const hydrated = await Promise.all((data || []).map(async message => {
+        const hydratedAttachments = await Promise.all((data || []).map(async message => {
           if (!message.attachment_url) return message;
           const { data: signed } = await supabase.storage.from('chat-media').createSignedUrl(message.attachment_url, 3600);
           return { ...message, attachment_url: signed?.signedUrl || null };
         }));
+        const hydrated = await hydratePollRows(hydratedAttachments);
         if (alive) setMessages(hydrated);
       }
       if (alive) setLoadingMessages(false);
@@ -874,9 +930,13 @@ function App() {
       loadConversations(profile.id, false);
     })();
     const hydrateRealtimeMessage = async message => {
-      if (!message.attachment_url) return message;
-      const { data: signed } = await supabase.storage.from('chat-media').createSignedUrl(message.attachment_url, 3600);
-      return { ...message, attachment_url: signed?.signedUrl || null };
+      let hydrated = message;
+      if (message.attachment_url) {
+        const { data: signed } = await supabase.storage.from('chat-media').createSignedUrl(message.attachment_url, 3600);
+        hydrated = { ...message, attachment_url: signed?.signedUrl || null };
+      }
+      const [withPoll] = await hydratePollRows([hydrated]);
+      return withPoll;
     };
     const channel = supabase.channel(`messages:${active.id}`)
       .on('postgres_changes', {event:'INSERT', schema:'public', table:'messages', filter:`conversation_id=eq.${active.id}`}, payload => { hydrateRealtimeMessage(payload.new).then(row => setMessages(current => current.some(m => m.id === row.id) ? current : [...current, row])); })
@@ -907,10 +967,14 @@ function App() {
     } catch (e) { notify(e.message || 'Could not start conversation.'); }
   };
 
-  const sendMessage = async (content, replyToId = null, replyTo = null) => {
+  const sendMessage = async (content, replyToId = null, replyTo = null, pollDraft = null) => {
     const mentions = getMentionIds(content, profiles, profile.id);
     const { data, error } = await supabase.from('messages').insert({ conversation_id:active.id, sender_id:profile.id, content, reply_to_message_id: replyToId, reply_to_sender_id: replyTo?.sender_id || null, reply_to_content: replyTo?.content || replyTo?.attachment_name || null, mentions }).select().single();
     if (error) throw error;
+    if (pollDraft) {
+      const messagePoll = await createPoll('message', data.id, pollDraft);
+      data.poll_id = messagePoll.id; data.poll = messagePoll;
+    }
     if (mentions.length) {
       const { error: pingError } = await supabase.from('chatter_notifications').insert(mentions.map(recipient_user_id => ({
         recipient_user_id, actor_user_id: profile.id, notification_type: 'message_mention',
@@ -930,9 +994,23 @@ function App() {
     loadConversations(profile.id, false);
   };
 
-  const createPost = async (content, media) => {
+  const createPoll = async (targetType, targetId, draft) => {
+    const question = String(draft?.question || '').trim();
+    const options = [...new Set((draft?.options || []).map(value => String(value || '').trim()).filter(Boolean))];
+    if (!question || options.length < 2 || options.length > 6) throw new Error('Polls need a question and 2–6 different options.');
+    const { data: poll, error: pollError } = await supabase.from('chatter_polls').insert({ creator_id: profile.id, target_type: targetType, target_id: targetId, question, allow_multiple: Boolean(draft.allowMultiple) }).select().single();
+    if (pollError) throw pollError;
+    const { data: optionRows, error: optionError } = await supabase.from('chatter_poll_options').insert(options.map((option_text, position) => ({ poll_id: poll.id, option_text, position }))).select().order('position');
+    if (optionError) { await supabase.from('chatter_polls').delete().eq('id', poll.id); throw optionError; }
+    const targetTable = targetType === 'post' ? 'posts' : 'messages';
+    const { error: linkError } = await supabase.from(targetTable).update({ poll_id: poll.id }).eq('id', targetId);
+    if (linkError) { await supabase.from('chatter_polls').delete().eq('id', poll.id); throw linkError; }
+    return { ...poll, options: optionRows || [] };
+  };
+
+  const createPost = async (content, media, pollDraft = null) => {
     const cleaned = (content || '').trim();
-    if (!cleaned && !media) throw new Error('Write something or attach a photo/video.');
+    if (!cleaned && !media && !pollDraft) throw new Error('Write something, attach media or add a poll.');
     const chosen = media || null;
     if (chosen && chosen.size > 30 * 1024 * 1024) throw new Error('Post media must be 30 MB or smaller.');
     let mediaPath = null;
@@ -945,14 +1023,16 @@ function App() {
       if (uploadError) throw uploadError;
     }
     const mentions = getMentionIds(cleaned, profiles, profile.id);
+    const postContent = cleaned || (pollDraft ? `📊 ${String(pollDraft.question || '').trim()}` : '');
     const { data: createdPost, error } = await supabase.from('posts').insert({
-      author_id: profile.id, content: cleaned, mentions, media_path: mediaPath,
+      author_id: profile.id, content: postContent, mentions, media_path: mediaPath,
       media_type: chosen?.type || null, media_name: chosen?.name || null, media_size: chosen?.size || null
     }).select('id').single();
     if (error) {
       if (mediaPath) await supabase.storage.from('post-media').remove([mediaPath]);
       throw error;
     }
+    if (pollDraft) await createPoll('post', createdPost.id, pollDraft);
     if (mentions.length) {
       const { error: pingError } = await supabase.from('chatter_notifications').insert(mentions.map(recipient_user_id => ({
         recipient_user_id, actor_user_id: profile.id, notification_type: 'post_mention',
@@ -1039,7 +1119,7 @@ function App() {
       if (!safe) throw new Error(`This profile link is not a valid web address: ${value}`);
       return safe;
     });
-    const { data, error } = await supabase.from('profiles').update({ display_name:changes.displayName.trim(), username, bio:changes.bio.trim(), bio_links:safeBioLinks, username_color:changes.usernameColor, avatar_url:avatarUrl, banner_url:bannerUrl, updated_at:new Date().toISOString() }).eq('id',profile.id).select().single();
+    const { data, error } = await supabase.from('profiles').update({ display_name:changes.displayName.trim(), username, bio:changes.bio.trim(), bio_links:safeBioLinks, profile_status:String(changes.profileStatus || '').trim(), profile_theme_color:changes.profileThemeColor || '#A3E6D3', username_color:changes.usernameColor, avatar_url:avatarUrl, banner_url:bannerUrl, updated_at:new Date().toISOString() }).eq('id',profile.id).select().single();
     if (error) throw error;
     setProfile(data); setProfiles(prev => ({...prev,[data.id]:data})); notify('Profile updated.');
   };
@@ -1092,7 +1172,7 @@ function App() {
   const tabs = [{id:'home',label:'Home',icon:Home},{id:'chats',label:'Chats',icon:MessageSquare},{id:'posts',label:'Posts',icon:Newspaper},{id:'appearance',label:'Settings',icon:Palette},{id:'profile',label:'Profile',icon:UserCircle},...(isAdmin?[{id:'admin',label:'Admin',icon:Shield}]:[])];
   return <div className={`chatter-app ${lightMode ? 'light-mode' : ''} ${appearance.motion==='off'?'no-motion':''}`}
     data-density={appearance.density} data-wallpaper={appearance.wallpaper} data-bubble-style={appearance.bubbleStyle} data-font={appearance.font}
-    style={{'--mint':accent.primary,'--mint2':accent.strong,'--mint-dim':accent.dim}}>
+    style={{'--mint':appearance.customAccent || accent.primary,'--mint2':appearance.customAccent || accent.strong,'--mint-dim':accent.dim,'--chat-font-size':`${appearance.messageFontSize || 12}px`}}>
     <header className="app-topbar"><button className="topbar-brand" onClick={()=>{setActiveTab('home');setMobileChatOpen(false);}}><span className="brand-symbol"><MessageCircle size={17} fill="currentColor"/></span><b>chatter</b><i>YOUR SPACE</i></button><div className="topbar-search"><Search size={17}/><input value={search} onChange={e=>setSearch(e.target.value)} placeholder="Search conversations and people"/><kbd>⌘ K</kbd></div><div className="topbar-actions"><NotificationCenter currentUserId={profile.id} onOpenNotification={item=>{if(item.target_type==='conversation'){const target=conversations.find(row=>row.id===item.target_id);if(target)openConversation(target)}else if(item.target_type==='profile'){const person=profiles[item.target_id];if(person)setViewProfile(person);else supabase.from('profiles').select('*').eq('id',item.target_id).maybeSingle().then(({data})=>data&&setViewProfile(data))}else if(item.target_type==='post')setActiveTab('posts')}}/><button className="icon-button" title={lightMode?'Switch to dark mode':'Switch to light mode'} onClick={()=>setAppearance(v=>({...v,theme:lightMode?'dark':'light'}))}>{lightMode?<Moon size={18}/>:<Sun size={18}/>}</button><button className="topbar-profile" onClick={()=>setActiveTab('profile')}><Avatar profile={profile} size="sm"/></button></div></header>
     <div className="app-content"><nav className="desktop-nav">{tabs.map(t=><button key={t.id} className={activeTab===t.id?'active':''} onClick={()=>{setActiveTab(t.id);setMobileChatOpen(false);}}><t.icon size={18}/><span>{t.label}</span>{t.id==='chats'&&conversations.some(c=>c.unread_count>0)&&<i/>}</button>)}<div className="desktop-nav-foot"><ShieldCheck size={15}/><span>Private by design</span></div></nav>
       <main className="app-main">
@@ -1101,7 +1181,7 @@ function App() {
         {activeTab==='posts'&&<PostDashboard profile={profile} posts={posts} loadingPosts={loadingPosts} currentUserId={profile.id} profiles={profiles} customEmojis={customEmojis} onCreatePost={createPost} onOpenMedia={setMediaViewer} onNewChat={openNewChat}/>} 
         {activeTab==='appearance'&&<AppearanceDashboard appearance={appearance} onChange={setAppearance} currentUserId={profile.id} customEmojis={customEmojis} onCustomEmojisChange={setCustomEmojis} onReset={()=>{setAppearance(DEFAULT_APPEARANCE);notify('Appearance reset for this browser.');}}/>}
         {activeTab==='admin'&&isAdmin&&<AdminDashboard onlineUsers={onlineUsers} currentUserId={profile?.id} onNotify={notify}/>}
-        {activeTab==='profile'&&<section className="profile-dashboard"><span className="eyebrow">YOUR ACCOUNT</span><h1>Your <em>profile.</em></h1><div className="profile-dashboard-card"><div className="profile-dashboard-banner" style={profile?.banner_url?{backgroundImage:`url(${profile.banner_url})`}:{}}/><div className="profile-dashboard-info"><Avatar profile={profile} size="xl"/><div><h2>{profile?.display_name}</h2><span style={{color:profile?.username_color || '#A3E6D3'}}>@{profile?.username}</span><p>{profile?.bio||'Add a little about yourself.'}</p></div><button className="primary-button" onClick={()=>setShowProfile(true)}><Settings size={15}/> Edit profile</button></div></div><button className="profile-signout" onClick={signOut}><LogOut size={16}/> Sign out</button></section>}
+        {activeTab==='profile'&&<section className="profile-dashboard"><span className="eyebrow">YOUR ACCOUNT</span><h1>Your <em>profile.</em></h1><div className="profile-dashboard-card"><div className="profile-dashboard-banner" style={profile?.banner_url?{backgroundImage:`url(${profile.banner_url})`}:{}}/><div className="profile-dashboard-info"><Avatar profile={profile} size="xl"/><div><h2>{profile?.display_name}</h2><span style={{color:profile?.username_color || '#A3E6D3'}}>@{profile?.username}</span><p>{profile?.bio||'Add a little about yourself.'}</p>{profile?.profile_status && <small className="profile-dashboard-status">{profile.profile_status}</small>}</div><button className="primary-button" onClick={()=>setShowProfile(true)}><Settings size={15}/> Edit profile</button></div></div><button className="profile-signout" onClick={signOut}><LogOut size={16}/> Sign out</button></section>}
       </main></div>
     <nav className="mobile-bottom-nav">{tabs.map(t=><button key={t.id} className={activeTab===t.id?'active':''} onClick={()=>{setActiveTab(t.id);setMobileChatOpen(false);}}><t.icon size={20}/><span>{t.label}</span></button>)}</nav>
     {showProfile&&<ProfileModal profile={profile} onClose={()=>setShowProfile(false)} onSave={saveProfile} onSignOut={signOut}/>}
