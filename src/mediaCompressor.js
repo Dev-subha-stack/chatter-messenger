@@ -13,7 +13,7 @@ function report(onProgress, phase, progress, message, extra = {}) {
 
 function makeFile(blob, name, type) {
   const safeName = name.replace(/\.[^.]+$/, '');
-  return new File([blob], `${safeName}.${type === 'image/webp' ? 'webp' : 'webm'}`, {
+  return new File([blob], `${safeName}.${type === 'image/webp' ? 'webp' : type === 'video/mp4' ? 'mp4' : 'webm'}`, {
     type,
     lastModified: Date.now(),
   });
@@ -126,7 +126,7 @@ async function compressVideo(file, options, onProgress) {
     if (typeof canvas.captureStream !== 'function') throw new Error('Video canvas capture is not supported on this device.');
 
     const preferredTypes = [
-      'video/webm;codecs=vp9,opus',
+      'video/mp4;codecs=h264,aac',\n      'video/mp4',\n      'video/webm;codecs=vp9,opus',
       'video/webm;codecs=vp8,opus',
       'video/webm;codecs=vp8',
       'video/webm',
@@ -142,7 +142,7 @@ async function compressVideo(file, options, onProgress) {
     }
 
     const pixels = width * height;
-    const bitrate = options.videoBitsPerSecond || (pixels >= 1920 * 1080 ? 2200000 : pixels >= 1280 * 720 ? 1300000 : 750000);
+    const defaultBitrate = options.videoBitsPerSecond || (pixels >= 1920 * 1080 ? 2200000 : pixels >= 1280 * 720 ? 1300000 : 750000);\n    const targetBitrate = options.targetBytes ? Math.floor((options.targetBytes * 8 / duration) * 0.88) - 96000 : defaultBitrate;\n    const bitrate = Math.max(250000, Math.min(defaultBitrate, targetBitrate));
     recorder = new MediaRecorder(outputStream, {
       mimeType,
       videoBitsPerSecond: bitrate,
@@ -182,7 +182,7 @@ async function compressVideo(file, options, onProgress) {
     }, { once: true });
 
     const blob = await recording;
-    const output = makeFile(blob, file.name, 'video/webm');
+    const outputType = recorder.mimeType?.includes('mp4') ? 'video/mp4' : 'video/webm';\n    const output = makeFile(blob, file.name, outputType);
     if (output.size >= file.size) {
       report(onProgress, 'done', 100, `Video is already as small as the compressed copy. Keeping original (${formatMediaBytes(file.size)}).`, {
         originalSize: file.size, outputSize: file.size, savedBytes: 0,
