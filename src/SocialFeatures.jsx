@@ -153,7 +153,13 @@ export function SocialPostCard({ post, onOpenMedia, currentUserId, profiles = {}
     if (!likeResult.error) setLikes(likeResult.data || []);
     if (!repostResult.error) setReposts(repostResult.data || []);
   };
-  useEffect(() => { load(); }, [post.id]);
+  useEffect(() => {
+    load();
+    const channel = supabase.channel(`comment-likes:${post.id}`)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'post_comment_likes' }, load)
+      .subscribe();
+    return () => { supabase.removeChannel(channel); };
+  }, [post.id]);
 
   const liked = likes.some(row => row.user_id === currentUserId);
   const reposted = reposts.some(row => row.user_id === currentUserId);
