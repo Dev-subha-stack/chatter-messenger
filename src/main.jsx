@@ -10,7 +10,7 @@ import { isSupabaseConfigured, supabase } from './supabase';
 import { AppearanceDashboard, AdminDashboard, DEFAULT_APPEARANCE, APPEARANCE_ACCENTS } from './AppearanceAdmin';
 import { AuthScreen, PasswordRecoveryModal } from './AuthFlow';
 import { compressMediaFile, formatMediaBytes } from './mediaCompressor';
-import { SocialPostCard, NotificationCenter } from './SocialFeatures';
+import { SocialPostCard, NotificationCenter, EmojiPicker, renderRichContent } from './SocialFeatures';
 import './styles.css';
 
 const BRAND = 'Chatter';
@@ -34,6 +34,14 @@ const renderMentions = text => String(text || '').split(/(@[a-z0-9_]+)/gi).map((
 const getMentionIds = (text, directory, currentUserId) => {
   const handles = [...String(text || '').matchAll(/@([a-z0-9_]+)/gi)].map(match => match[1].toLowerCase());
   return Object.values(directory || {}).filter(person => person.id !== currentUserId && handles.includes(String(person.username || '').toLowerCase())).map(person => person.id);
+};
+const safeExternalUrl = value => {
+  try {
+    const raw = String(value || '').trim();
+    if (!raw) return null;
+    const parsed = new URL(/^https?:\/\//i.test(raw) ? raw : `https://${raw}`);
+    return ['http:', 'https:'].includes(parsed.protocol) ? parsed.href : null;
+  } catch { return null; }
 };
 function CompressionStatus({ status }) {
   if (!status) return null;
@@ -62,6 +70,7 @@ function ProfileModal({ profile, onClose, onSave, onSignOut }) {
   const [displayName, setDisplayName] = useState(profile?.display_name || '');
   const [username, setUsername] = useState(profile?.username || '');
   const [bio, setBio] = useState(profile?.bio || '');
+  const [bioLinks, setBioLinks] = useState((profile?.bio_links || []).join('\n'));
   const [usernameColor, setUsernameColor] = useState(profile?.username_color || '#A3E6D3');
   const [compressMedia, setCompressMedia] = useState(localStorage.getItem('chatter-compress-media') !== 'false');
   const [avatar, setAvatar] = useState(null);
@@ -82,7 +91,7 @@ function ProfileModal({ profile, onClose, onSave, onSignOut }) {
   const save = async e => {
     e.preventDefault(); setBusy(true); setError('');
     if (!/^#[0-9a-fA-F]{6}$/.test(usernameColor)) { setError('Enter a valid 6-digit HEX colour.'); setBusy(false); return; }
-    try { await onSave({ displayName, username, bio, usernameColor, compressMedia, avatar, banner }, setCompression); onClose(); }
+    try { await onSave({ displayName, username, bio, bioLinks, usernameColor, compressMedia, avatar, banner }, setCompression); onClose(); }
     catch (e2) { setError(e2.message || 'Could not save your profile.'); }
     finally { setBusy(false); }
   };
@@ -96,7 +105,7 @@ function ProfileModal({ profile, onClose, onSave, onSignOut }) {
           <input ref={bannerInput} type="file" accept="image/*" hidden onChange={e => readFile(e.target.files?.[0], setBanner, setBannerPreview)}/>
         </div>
         <div className="avatar-edit-row"><div className="avatar-wrap"><Avatar profile={{...profile, avatar_url: avatarPreview, display_name: displayName}} size="xl"/><button type="button" className="camera-bubble" onClick={() => avatarInput.current?.click()}><Camera size={14}/></button><input ref={avatarInput} type="file" accept="image/*" hidden onChange={e => readFile(e.target.files?.[0], setAvatar, setAvatarPreview)}/></div><div><strong>{displayName || 'Your name'}</strong><span>Profile photo</span></div></div>
-        <div className="profile-fields"><label>Display name<input value={displayName} onChange={e => setDisplayName(e.target.value)} maxLength={32} placeholder="Your name" required/></label><label>Username<div className="username-input"><span>@</span><input value={username} onChange={e => setUsername(e.target.value.toLowerCase().replace(/[^a-z0-9_]/g, ''))} maxLength={24} minLength={3} placeholder="username" required/></div></label><label className="compress-setting"><span>Compress photos and videos before upload</span><input type="checkbox" checked={compressMedia} onChange={e=>setCompressMedia(e.target.checked)}/></label><label>About<textarea value={bio} onChange={e => setBio(e.target.value)} rows={3} maxLength={100} placeholder="A little about you…"/></label><label>Username colour<div className="username-colour-control"><input aria-label="Choose username colour" type="color" value={usernameColor} onChange={e=>setUsernameColor(e.target.value)}/><input aria-label="Username colour HEX" value={usernameColor} onChange={e=>/^#[0-9a-fA-F]{0,6}$/.test(e.target.value)&&setUsernameColor(e.target.value)} maxLength={7}/><span className="username-live-preview" style={{color:usernameColor}}>@{username || 'yourname'}</span></div><div className="colour-presets">{['#A3E6D3','#FF5733','#FFC300','#7B61FF','#42A5F5','#F06292','#8BC34A','#FFFFFF'].map(c=><button type="button" key={c} aria-label={c} style={{background:c}} onClick={()=>setUsernameColor(c)}/>)}</div></label></div>
+        <div className="profile-fields"><label>Display name<input value={displayName} onChange={e => setDisplayName(e.target.value)} maxLength={32} placeholder="Your name" required/></label><label>Username<div className="username-input"><span>@</span><input value={username} onChange={e => setUsername(e.target.value.toLowerCase().replace(/[^a-z0-9_]/g, ''))} maxLength={24} minLength={3} placeholder="username" required/></div></label><label className="compress-setting"><span>Compress photos and videos before upload</span><input type="checkbox" checked={compressMedia} onChange={e=>setCompressMedia(e.target.checked)}/></label><label>About<textarea value={bio} onChange={e => setBio(e.target.value)} rows={3} maxLength={100} placeholder="A little about you…"/></label><label>Profile links<textarea value={bioLinks} onChange={e => setBioLinks(e.target.value)} rows={3} maxLength={500} placeholder="yourwebsite.com\ninstagram.com/username"/><small className="field-hint">Add up to 5 links, one per line. Links open in a new tab.</small></label><label>Username colour<div className="username-colour-control"><input aria-label="Choose username colour" type="color" value={usernameColor} onChange={e=>setUsernameColor(e.target.value)}/><input aria-label="Username colour HEX" value={usernameColor} onChange={e=>/^#[0-9a-fA-F]{0,6}$/.test(e.target.value)&&setUsernameColor(e.target.value)} maxLength={7}/><span className="username-live-preview" style={{color:usernameColor}}>@{username || 'yourname'}</span></div><div className="colour-presets">{['#A3E6D3','#FF5733','#FFC300','#7B61FF','#42A5F5','#F06292','#8BC34A','#FFFFFF'].map(c=><button type="button" key={c} aria-label={c} style={{background:c}} onClick={()=>setUsernameColor(c)}/>)}</div></label></div>
         <CompressionStatus status={compression}/>
         {error && <div className="form-error">{error}</div>}
         <div className="modal-actions"><button type="button" className="text-button danger" onClick={onSignOut}><LogOut size={16}/> Sign out</button><button className="primary-button" disabled={busy}>{busy ? 'Saving…' : 'Save changes'}<Check size={16}/></button></div>
@@ -105,13 +114,13 @@ function ProfileModal({ profile, onClose, onSave, onSignOut }) {
   </div>;
 }
 
-function NewChatModal({ profiles, currentUserId, onlineUserIds, onClose, onStart }) {
+function NewChatModal({ profiles, currentUserId, onlineUserIds, onClose, onStart, onViewProfile }) {
   const [query, setQuery] = useState('');
   const matches = profiles.filter(p => p.id !== currentUserId && `${p.display_name} ${p.username}`.toLowerCase().includes(query.toLowerCase()));
   return <div className="modal-scrim" onMouseDown={e => e.target === e.currentTarget && onClose()}><div className="new-chat-modal">
     <div className="modal-top"><div><div className="eyebrow">FIND YOUR PEOPLE</div><h2>New conversation</h2></div><button className="icon-button" onClick={onClose}><X size={19}/></button></div>
     <div className="search-box"><Search size={16}/><input autoFocus value={query} onChange={e => setQuery(e.target.value)} placeholder="Search people or usernames"/></div>
-    <div className="people-list">{matches.length ? matches.map(p => <button className="person-row" key={p.id} onClick={() => onStart(p)}><Avatar profile={p}/><span className="person-info"><strong>{p.display_name}</strong><small>@{p.username || 'new-user'} · <span className={onlineUserIds?.has(p.id) ? 'status-online' : 'status-offline'}>{onlineUserIds?.has(p.id) ? 'Online' : 'Offline'}</span>{p.bio ? ` · ${p.bio}` : ''}</small></span><ArrowUp className="person-arrow" size={16}/></button>) : <div className="empty-search">{query ? 'No people found. Try another name.' : 'No other members yet. Invite someone to join.'}</div>}</div>
+    <div className="people-list">{matches.length ? matches.map(p => <div className="person-row" key={p.id}><button type="button" className="person-row-main" onClick={() => onStart(p)}><Avatar profile={p}/><span className="person-info"><strong>{p.display_name}</strong><small>@{p.username || 'new-user'} · <span className={onlineUserIds?.has(p.id) ? 'status-online' : 'status-offline'}>{onlineUserIds?.has(p.id) ? 'Online' : 'Offline'}</span>{p.bio ? ` · ${p.bio}` : ''}</small></span><ArrowUp className="person-arrow" size={16}/></button><button type="button" className="person-view-button" onClick={() => onViewProfile?.(p)} title={`View ${p.display_name}'s profile`} aria-label={`View ${p.display_name}'s profile`}><User size={16}/></button></div>) : <div className="empty-search">{query ? 'No people found. Try another name.' : 'No other members yet. Invite someone to join.'}</div>}</div>
   </div></div>;
 }
 
@@ -138,13 +147,16 @@ function ChatList({ conversations, activeId, onSelect, profiles, currentProfile,
   </aside>;
 }
 
-function MessageBubble({ message, mine, onOpenMedia, onReply, replyMessage, currentProfile, other, onEdit, onDelete }) {
+function MessageBubble({ message, mine, onOpenMedia, onReply, replyMessage, currentProfile, other, onEdit, onDelete, customEmojis = [] }) {
   const isImage = message.attachment_type?.startsWith('image/');
   const isVideo = message.attachment_type?.startsWith('video/');
   const [editing,setEditing] = useState(false);
   const [draft,setDraft] = useState(message.content || '');
   const [menuOpen,setMenuOpen] = useState(false);
   const quote = replyMessage || (message.reply_to_message_id ? {sender_id:message.reply_to_sender_id,content:message.reply_to_content} : null);
+  const quotedSenderId = quote?.sender_id || message.reply_to_sender_id;
+  const quotedSender = quotedSenderId === currentProfile?.id ? 'You' : (quotedSenderId === other?.id ? (other?.display_name || 'message') : 'message');
+  const quotedContent = quote?.deleted_at ? 'This message was deleted' : (quote?.content || message.reply_to_content || quote?.attachment_name || (quote?.attachment_type?.startsWith('image/') ? 'Photo' : quote?.attachment_type?.startsWith('video/') ? 'Video' : 'Original message'));
   const saveEdit = async () => {
     const next = draft.trim();
     if (!next || next === message.content) { setEditing(false); return; }
@@ -158,7 +170,7 @@ function MessageBubble({ message, mine, onOpenMedia, onReply, replyMessage, curr
     catch (error) { window.alert(error?.message || 'Could not delete this message.'); }
   };
   return <div className={`message-line ${mine ? 'mine' : 'theirs'}`}><div className={`message-bubble ${mine ? 'bubble-mine' : 'bubble-theirs'}`}>
-    {quote && <div className="message-reply-preview"><small>Replying to {(quote.sender_id || message.reply_to_sender_id) === currentProfile?.id ? 'You' : (other?.display_name || 'message')}</small><span>{quote.deleted_at ? 'This message was deleted' : (quote.content || message.reply_to_content || quote.attachment_name || 'Original message')}</span></div>}
+    {quote && <div className="message-reply-preview"><small><CornerDownRight size={11}/> Replying to {quotedSender}</small><span>{renderRichContent(quotedContent, customEmojis)}</span></div>}
     {message.deleted_at ? <span className="deleted-message">This message was deleted</span> : <>
       {message.attachment_url && (isImage
         ? <button type="button" className="message-attachment-image media-open-button" onClick={() => onOpenMedia?.({src:message.attachment_url,type:'image',name:message.attachment_name})}><img src={message.attachment_url} alt={message.attachment_name || 'Shared image'}/></button>
@@ -167,7 +179,7 @@ function MessageBubble({ message, mine, onOpenMedia, onReply, replyMessage, curr
           : <a className="message-attachment-file" href={message.attachment_url} target="_blank" rel="noreferrer"><FileText size={18}/><span>{message.attachment_name || 'Download file'}</span><ArrowUp size={13}/></a>)}
       {editing
         ? <div className="message-edit-box"><textarea value={draft} onChange={event => setDraft(event.target.value)} maxLength={4000} rows={Math.min(5,Math.max(2,draft.split(String.fromCharCode(10)).length))}/><div><button type="button" onClick={() => {setEditing(false);setDraft(message.content || '')}}>Cancel</button><button type="button" onClick={saveEdit} disabled={!draft.trim()}>Save</button></div></div>
-        : message.content && (!message.attachment_url || message.content !== message.attachment_name) && <span>{renderMentions(message.content)}</span>}
+        : message.content && (!message.attachment_url || message.content !== message.attachment_name) && <span>{renderRichContent(message.content, customEmojis)}</span>}
     </>}
     <div className="message-meta"><time>{timeLabel(message.created_at)}{message.edited_at && !message.deleted_at ? ' · edited' : ''}</time>{mine && <CheckCheck size={14} className="read-tick"/>}<button type="button" className="message-reply-action" onClick={onReply} title="Reply to message"><CornerDownRight size={13}/></button>{mine && !message.deleted_at && !editing && <div className="message-actions-wrap"><button type="button" className="message-reply-action" title="Message options" onClick={() => setMenuOpen(value => !value)}><MoreHorizontal size={15}/></button>{menuOpen && <div className="message-actions-menu"><button type="button" onClick={() => {setDraft(message.content || '');setEditing(true);setMenuOpen(false)}}><Pencil size={13}/> Edit</button><button type="button" className="danger" onClick={deleteThis}><Trash2 size={13}/> Delete</button></div>}</div>}</div>
   </div></div>;
@@ -274,7 +286,7 @@ function ChatPanel({ conversation, other, currentProfile, messages, onSend, onSe
     <header className="chat-header"><div className="chat-header-person"><button className="icon-button mobile-back" onClick={onBack}><ArrowLeft size={19}/></button><button className="header-avatar-button" onClick={onOpenProfile}><Avatar profile={other} size="md"/></button><button className="header-person-copy" onClick={onOpenProfile}><strong>{other?.display_name || 'Chatter user'}</strong><small><i className={otherTyping || onlineUserIds?.has(other?.id) ? 'online-dot' : 'offline-dot'}/> <span className={otherTyping || onlineUserIds?.has(other?.id) ? 'status-online' : 'status-offline'}>{otherTyping ? 'typing…' : (onlineUserIds?.has(other?.id) ? 'Online' : 'Offline')}</span>{!otherTyping && <><span>·</span><span style={{color:other?.username_color || '#A3E6D3'}}>@{other?.username || 'member'}</span></>}</small></button></div><div className="chat-header-actions"><span className="header-divider"/><button className="icon-button" onClick={() => setShowWallpaper(true)} title="Chat wallpaper"><Image size={18}/></button><button className="icon-button" onClick={() => setShowDetails(v => !v)} title="Conversation details"><Info size={18}/></button></div></header>
     <div className="chat-body" data-wallpaper={wallpaper?.theme || 'default'} style={wallpaper?.url ? {backgroundImage:`linear-gradient(rgba(5,12,15,.38),rgba(5,12,15,.38)),url("${wallpaper.url}")`,backgroundSize:'cover',backgroundPosition:'center'} : undefined} onClick={() => showDetails && setShowDetails(false)}>
       <div className="day-divider"><span>YOUR CONVERSATION</span></div>
-      {loading ? <div className="messages-loading">Loading messages…</div> : <>{!messages.length && <div className="start-card"><div className="start-avatar"><Avatar profile={other} size="xl"/></div><strong>{other?.display_name || 'Chatter user'}</strong><span>@{other?.username || 'member'}</span>{other?.bio && <p>{other.bio}</p>}<small>This is the beginning of your conversation.</small><button className="text-button" onClick={onOpenProfile}>View profile <ArrowUp size={13}/></button></div>}{messages.map(message => <MessageBubble key={message.id} message={message} mine={message.sender_id === currentProfile?.id} currentProfile={currentProfile} other={other} onEdit={onEditMessage} onDelete={onDeleteMessage} onOpenMedia={onOpenMedia} onReply={() => setReplyTo(message)} replyMessage={messages.find(row => row.id === message.reply_to_message_id)}/>)}</>}
+      {loading ? <div className="messages-loading">Loading messages…</div> : <>{!messages.length && <div className="start-card"><div className="start-avatar"><Avatar profile={other} size="xl"/></div><strong>{other?.display_name || 'Chatter user'}</strong><span>@{other?.username || 'member'}</span>{other?.bio && <p>{other.bio}</p>}<small>This is the beginning of your conversation.</small><button className="text-button" onClick={onOpenProfile}>View profile <ArrowUp size={13}/></button></div>}{messages.map(message => <MessageBubble key={message.id} message={message} mine={message.sender_id === currentProfile?.id} currentProfile={currentProfile} other={other} customEmojis={customEmojis} onEdit={onEditMessage} onDelete={onDeleteMessage} onOpenMedia={onOpenMedia} onReply={() => setReplyTo(message)} replyMessage={messages.find(row => row.id === message.reply_to_message_id)}/>)}</>}
       <div ref={endRef}/>
     </div>
     <form className="composer" onSubmit={submit}>
@@ -282,7 +294,7 @@ function ChatPanel({ conversation, other, currentProfile, messages, onSend, onSe
       <CompressionStatus status={compression}/>
       {replyTo && <div className="replying-strip"><span>Replying to {replyTo.sender_id === currentProfile?.id ? 'your message' : (other?.display_name || 'this person')}: {replyTo.deleted_at ? 'This message was deleted' : (replyTo.content || replyTo.attachment_name || 'Attachment')}</span><button type="button" onClick={() => setReplyTo(null)}><X size={14}/></button></div>}
       {mentionCandidates.length > 0 && <div className="mention-suggestions">{mentionCandidates.map(person => <button type="button" key={person.id} onClick={() => chooseMention(person)}>@{person.username}<small>{person.display_name}</small></button>)}</div>}
-      {emojiOpen && <div className="chat-emoji-picker">{['😀','😂','🥹','❤️','🔥','🎉','👍','✨','😎','😭','🙏','💀'].map(emoji => <button type="button" key={emoji} onClick={() => setDraft(value => value + emoji)}>{emoji}</button>)}{(customEmojis || []).map(item => <button type="button" key={item.id} title={item.shortcode} onClick={() => setDraft(value => value + item.emoji)}>{item.emoji}</button>)}</div>}
+      {emojiOpen && <EmojiPicker customEmojis={customEmojis || []} onSelect={value => updateDraft(`${draft}${value}`)}/ >}
       {uploading && <div className="upload-progress"><i/></div>}
       <input ref={fileInputRef} type="file" hidden accept="image/*,video/mp4,video/webm,video/quicktime,image/gif,application/pdf,text/plain" onChange={e=>{chooseFile(e.target.files?.[0]);e.target.value='';}}/>
       <div className="composer-inner"><button type="button" className="composer-tool" title="Attach media (5 MB max)" onClick={()=>fileInputRef.current?.click()} disabled={compression?.phase==='compressing'||uploading}><Paperclip size={19}/></button><textarea ref={inputRef} value={draft} onChange={e => updateDraft(e.target.value)} onKeyDown={e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); submit(e); } }} rows={1} placeholder={`Message ${other?.display_name || 'your friend'}…`} maxLength={4000}/><button type="button" className="composer-tool emoji-tool" title="Emoji" onClick={() => setEmojiOpen(value => !value)}><Smile size={19}/></button><button className="send-button" disabled={(!draft.trim()&&!selectedFile) || sending} title="Send message"><Send size={16}/></button></div><div className="composer-hint"><span>Up to 5 MB · Images, videos, GIFs, PDF, TXT</span><span>{draft.length}/4000</span></div></form>
@@ -292,24 +304,115 @@ function ChatPanel({ conversation, other, currentProfile, messages, onSend, onSe
 }
 
 
-function PublicProfileModal({ profile, onClose, isOnline }) {
-  return <div className="modal-scrim" onMouseDown={e => e.target === e.currentTarget && onClose()}><div className="public-profile-modal"><button className="icon-button public-close" onClick={onClose}><X size={18}/></button><div className="public-banner" style={profile?.banner_url ? {backgroundImage:`url(${profile.banner_url})`} : {}}/><div className="public-profile-content"><Avatar profile={profile} size="xl"/><h2>{profile?.display_name}</h2><span style={{color:profile?.username_color || '#A3E6D3'}}>@{profile?.username}</span><span className={isOnline?'profile-presence status-online':'profile-presence status-offline'}><i className={isOnline?'online-dot':'offline-dot'}/>{isOnline?'Online':'Offline'}</span><p>{profile?.bio || 'A Chatter member.'}</p></div></div></div>;
+function PublicProfileModal({ profile, onClose, isOnline, currentUserId }) {
+  const [following, setFollowing] = useState(false);
+  const [followers, setFollowers] = useState(0);
+  const [followingCount, setFollowingCount] = useState(0);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState('');
+  useEffect(() => {
+    if (!profile?.id) return;
+    let alive = true;
+    const load = async () => {
+      const [followerResult, followingResult, edgeResult] = await Promise.all([
+        supabase.from('user_follows').select('follower_id', { count: 'exact', head: true }).eq('following_id', profile.id),
+        supabase.from('user_follows').select('following_id', { count: 'exact', head: true }).eq('follower_id', profile.id),
+        currentUserId && currentUserId !== profile.id
+          ? supabase.from('user_follows').select('follower_id').eq('follower_id', currentUserId).eq('following_id', profile.id).maybeSingle()
+          : Promise.resolve({ data: null, error: null }),
+      ]);
+      if (!alive) return;
+      const failed = followerResult.error || followingResult.error || edgeResult.error;
+      if (failed) { setError(failed.message || 'Could not load follow details.'); return; }
+      setFollowers(followerResult.count || 0);
+      setFollowingCount(followingResult.count || 0);
+      setFollowing(Boolean(edgeResult.data));
+    };
+    load();
+    return () => { alive = false; };
+  }, [profile?.id, currentUserId]);
+  const toggleFollow = async () => {
+    if (!currentUserId || !profile?.id || currentUserId === profile.id || busy) return;
+    setBusy(true); setError('');
+    if (following) {
+      const { error: followError } = await supabase.from('user_follows').delete().eq('follower_id', currentUserId).eq('following_id', profile.id);
+      if (followError) setError(followError.message);
+      else { setFollowing(false); setFollowers(value => Math.max(0, value - 1)); }
+    } else {
+      const { error: followError } = await supabase.from('user_follows').insert({ follower_id: currentUserId, following_id: profile.id });
+      if (followError && followError.code !== '23505') setError(followError.message);
+      else {
+        setFollowing(true); setFollowers(value => value + 1);
+        const { error: noticeError } = await supabase.from('chatter_notifications').insert({
+          recipient_user_id: profile.id, actor_user_id: currentUserId, notification_type: 'new_follower',
+          target_type: 'profile', target_id: currentUserId, body: 'Started following you.',
+        });
+        if (noticeError) console.warn('Follower notification could not be saved:', noticeError.message);
+      }
+    }
+    setBusy(false);
+  };
+  const links = (Array.isArray(profile?.bio_links) ? profile.bio_links : []).map((value, index) => ({ url: safeExternalUrl(value), label: `Link ${index + 1}` })).filter(item => item.url);
+  return <div className="modal-scrim" onMouseDown={e => e.target === e.currentTarget && onClose()}><div className="public-profile-modal"><button className="icon-button public-close" onClick={onClose}><X size={18}/></button><div className="public-banner" style={profile?.banner_url ? {backgroundImage:`url(${profile.banner_url})`} : {}}/><div className="public-profile-content"><Avatar profile={profile} size="xl"/><h2>{profile?.display_name}</h2><span style={{color:profile?.username_color || '#A3E6D3'}}>@{profile?.username}</span><span className={isOnline?'profile-presence status-online':'profile-presence status-offline'}><i className={isOnline?'online-dot':'offline-dot'}/>{isOnline?'Online':'Offline'}</span><div className="profile-follow-stats"><span><b>{followers}</b> followers</span><span><b>{followingCount}</b> following</span></div>{currentUserId !== profile?.id && <button type="button" className={`primary-button profile-follow-button ${following?'is-following':''}`} onClick={toggleFollow} disabled={busy}>{busy?'Please wait…':following?'Following':'Follow'}</button>}<p>{profile?.bio || 'A Chatter member.'}</p>{links.length > 0 && <div className="profile-bio-links">{links.map((item,index)=><a key={`${item.url}-${index}`} href={item.url} target="_blank" rel="noopener noreferrer"><ArrowUp size={12}/>{new URL(item.url).hostname.replace(/^www\./,'')}</a>)}</div>}{error && <small className="profile-follow-error">{error}</small>}</div></div></div>;
 }
 
 function MediaViewer({ media, onClose }) {
+  const videoRef = useRef(null);
+  const stageRef = useRef(null);
+  const [playing, setPlaying] = useState(false);
+  const [muted, setMuted] = useState(true);
+  const [volume, setVolume] = useState(1);
+  const [currentTime, setCurrentTime] = useState(0);
+  const [duration, setDuration] = useState(0);
+  const formatTime = value => `${Math.floor((value || 0) / 60)}:${String(Math.floor((value || 0) % 60)).padStart(2, '0')}`;
   useEffect(() => {
     if (!media) return;
+    setPlaying(false); setMuted(true); setVolume(1); setCurrentTime(0); setDuration(0);
     const onKey = event => { if (event.key === 'Escape') onClose(); };
     window.addEventListener('keydown', onKey);
     const previous = document.body.style.overflow;
     document.body.style.overflow = 'hidden';
     return () => { window.removeEventListener('keydown', onKey); document.body.style.overflow = previous; };
   }, [media, onClose]);
+  const togglePlay = async () => {
+    const video = videoRef.current;
+    if (!video) return;
+    try { if (video.paused) await video.play(); else video.pause(); }
+    catch (error) { console.warn('Video playback could not start:', error); }
+  };
+  const setPlaybackPosition = value => {
+    const video = videoRef.current;
+    if (!video) return;
+    video.currentTime = Number(value);
+    setCurrentTime(video.currentTime);
+  };
+  const setVideoVolume = value => {
+    const next = Number(value);
+    setVolume(next); setMuted(next === 0);
+    if (videoRef.current) { videoRef.current.volume = next; videoRef.current.muted = next === 0; }
+  };
+  const toggleFullscreen = async () => {
+    try {
+      if (document.fullscreenElement) await document.exitFullscreen?.();
+      else await stageRef.current?.requestFullscreen?.();
+    } catch (error) { console.warn('Fullscreen is unavailable:', error); }
+  };
   if (!media) return null;
   return <div className="media-viewer" role="dialog" aria-modal="true" aria-label={media.name || 'Media preview'} onMouseDown={event => event.target === event.currentTarget && onClose()}>
     <button className="media-viewer-close" onClick={onClose} aria-label="Close media viewer"><X size={22}/></button>
-    <div className="media-viewer-stage">
-      {media.type === 'video' ? <video src={media.src} controls autoPlay playsInline/> : <img src={media.src} alt={media.name || 'Photo'}/>}
+    <div className={`media-viewer-stage ${media.type === 'video' ? 'has-custom-player' : ''}`} ref={stageRef}>
+      {media.type === 'video' ? <>
+        <video ref={videoRef} src={media.src} autoPlay muted={muted} playsInline preload="metadata" onClick={togglePlay} onPlay={() => setPlaying(true)} onPause={() => setPlaying(false)} onTimeUpdate={event => setCurrentTime(event.currentTarget.currentTime || 0)} onLoadedMetadata={event => setDuration(event.currentTarget.duration || 0)} onVolumeChange={event => { setMuted(event.currentTarget.muted); setVolume(event.currentTarget.volume); }} onEnded={() => setPlaying(false)}/>
+        <div className="custom-video-controls" onClick={event => event.stopPropagation()}>
+          <button type="button" onClick={togglePlay} aria-label={playing ? 'Pause video' : 'Play video'}>{playing ? <Pause size={18}/> : <Play size={18}/>}</button>
+          <span className="video-time">{formatTime(currentTime)}</span>
+          <input className="video-seek" type="range" min="0" max={duration || 0} step="0.1" value={Math.min(currentTime, duration || 0)} onChange={event => setPlaybackPosition(event.target.value)} aria-label="Seek video"/>
+          <span className="video-time">{formatTime(duration)}</span>
+          <button type="button" onClick={() => { const next = !muted; setMuted(next); if (videoRef.current) videoRef.current.muted = next; }} aria-label={muted ? 'Unmute video' : 'Mute video'}>{muted ? <VolumeX size={17}/> : <Volume2 size={17}/>}</button>
+          <input className="video-volume" type="range" min="0" max="1" step="0.05" value={muted ? 0 : volume} onChange={event => setVideoVolume(event.target.value)} aria-label="Video volume"/>
+          <button type="button" onClick={toggleFullscreen} aria-label="Toggle fullscreen"><Maximize2 size={17}/></button>
+        </div>
+      </> : <img src={media.src} alt={media.name || 'Photo'}/>}
       {media.name && <span className="media-viewer-name">{media.name}</span>}
     </div>
   </div>;
@@ -437,7 +540,7 @@ function PostDashboard({ profile, posts, loadingPosts, onCreatePost, onOpenMedia
     <form className="post-composer" onSubmit={submit}>
       <div className="post-composer-head"><Avatar profile={profile} size="md"/><span>Posting as <b>{profile?.display_name || 'you'}</b></span></div>
       <textarea value={content} onChange={event => setContent(event.target.value)} maxLength={1000} rows={4} placeholder="What's happening? Share an update…" aria-label="Write a post"/>
-      {selectedMedia && <div className="post-composer-media">{selectedMedia.type.startsWith('image/') ? <img src={previewUrl} alt="Post preview"/> : <video src={previewUrl} controls playsInline/>}<span>{selectedMedia.name} · {formatMediaBytes(selectedMedia.size)}</span><button type="button" className="icon-button" onClick={clearMedia} aria-label="Remove attachment"><X size={16}/></button></div>}
+      {selectedMedia && <div className="post-composer-media">{selectedMedia.type.startsWith('image/') ? <img src={previewUrl} alt="Post preview"/> : <video src={previewUrl} muted playsInline loop/>}<span>{selectedMedia.name} · {formatMediaBytes(selectedMedia.size)}</span><button type="button" className="icon-button" onClick={clearMedia} aria-label="Remove attachment"><X size={16}/></button></div>}
       <div className="post-composer-footer"><span>{content.length}/1000 · {selectedMedia ? '1 attachment' : 'No attachment'}</span><div><input ref={fileRef} type="file" hidden accept="image/*,video/mp4,video/webm,video/quicktime" onChange={event=>{chooseMedia(event.target.files?.[0]);event.target.value='';}}/><button type="button" className="composer-tool" onClick={()=>fileRef.current?.click()} title="Attach a photo or video" disabled={busy}><ImagePlus size={18}/></button><button type="submit" className="primary-button" disabled={(!content.trim()&&!selectedMedia)||busy}>{busy ? 'Preparing…' : 'Publish post'}<ArrowUp size={15}/></button></div></div>
       <CompressionStatus status={compression}/>
       {error && <div className="form-error" role="alert">{error}</div>}
@@ -624,7 +727,7 @@ function App() {
     (async () => {
       const [{ data: people, error: peopleError }, { data: emojiRows, error: emojiError }] = await Promise.all([
         supabase.from('profiles').select('*').order('display_name').limit(500),
-        supabase.from('user_custom_emojis').select('*').eq('owner_id', profile.id).order('created_at'),
+        supabase.from('user_custom_emojis').select('*').order('created_at'),
       ]);
       if (peopleError) throw peopleError;
       if (emojiError) throw emojiError;
@@ -639,9 +742,22 @@ function App() {
       const badgesByUser = new Map();
       badgeRows.forEach(row => badgesByUser.set(row.user_id, [...(badgesByUser.get(row.user_id) || []), row.role].filter(Boolean)));
       setProfiles(current => ({ ...current, ...Object.fromEntries((people || []).map(person => [person.id, { ...person, badges: badgesByUser.get(person.id) || [] }])) }));
-      setCustomEmojis(emojiRows || []);
+      const hydrateEmojis = rows => (rows || []).map(item => ({
+        ...item,
+        image_url: item.image_path ? supabase.storage.from('custom-emojis').getPublicUrl(item.image_path).data.publicUrl : null,
+      }));
+      setCustomEmojis(hydrateEmojis(emojiRows));
     })().catch(error => console.warn('Could not load member directory or custom emojis:', error));
-    return () => { alive = false; };
+    const emojiChannel = supabase.channel('chatter:custom-emojis')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'user_custom_emojis' }, async () => {
+        const { data, error } = await supabase.from('user_custom_emojis').select('*').order('created_at');
+        if (!alive || error) return;
+        setCustomEmojis((data || []).map(item => ({
+          ...item,
+          image_url: item.image_path ? supabase.storage.from('custom-emojis').getPublicUrl(item.image_path).data.publicUrl : null,
+        })));
+      }).subscribe();
+    return () => { alive = false; supabase.removeChannel(emojiChannel); };
   }, [profile?.id]);
 
   useEffect(() => {
@@ -883,7 +999,7 @@ function App() {
 
   const deleteMessage = async messageId => {
     const { data, error } = await supabase.from('messages')
-      .update({ content: '', deleted_at: new Date().toISOString() })
+      .update({ content: 'Message deleted', deleted_at: new Date().toISOString() })
       .eq('id', messageId).eq('sender_id', profile.id).select().single();
     if (error) throw error;
     setMessages(rows => rows.map(row => row.id === messageId ? { ...row, ...data } : row));
@@ -916,7 +1032,14 @@ function App() {
     const newBanner = await upload(changes.banner, 'banner');
     if (newAvatar) avatarUrl = newAvatar; if (newBanner) bannerUrl = newBanner;
     const username = changes.username.trim().toLowerCase();
-    const { data, error } = await supabase.from('profiles').update({ display_name:changes.displayName.trim(), username, bio:changes.bio.trim(), username_color:changes.usernameColor, avatar_url:avatarUrl, banner_url:bannerUrl, updated_at:new Date().toISOString() }).eq('id',profile.id).select().single();
+    const bioLinks = String(changes.bioLinks || '').split('\n').map(value => value.trim()).filter(Boolean);
+    if (bioLinks.length > 5) throw new Error('Add no more than 5 profile links.');
+    const safeBioLinks = bioLinks.map(value => {
+      const safe = safeExternalUrl(value);
+      if (!safe) throw new Error(`This profile link is not a valid web address: ${value}`);
+      return safe;
+    });
+    const { data, error } = await supabase.from('profiles').update({ display_name:changes.displayName.trim(), username, bio:changes.bio.trim(), bio_links:safeBioLinks, username_color:changes.usernameColor, avatar_url:avatarUrl, banner_url:bannerUrl, updated_at:new Date().toISOString() }).eq('id',profile.id).select().single();
     if (error) throw error;
     setProfile(data); setProfiles(prev => ({...prev,[data.id]:data})); notify('Profile updated.');
   };
