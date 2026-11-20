@@ -345,6 +345,8 @@ function ChatPanel({ conversation, other, currentProfile, messages, onSend, onSe
   useEffect(() => { endRef.current?.scrollIntoView({ behavior: 'smooth' }); }, [messages, conversation?.id]);
   useEffect(() => { if(filePreview) URL.revokeObjectURL(filePreview); setDraft(''); setShowDetails(false); setShowWallpaper(false); setSelectedFile(null); setFilePreview(''); setCompression(null); setReplyTo(null); setEmojiOpen(false); setPollDraft(null); }, [conversation?.id]);
   useEffect(() => { if (conversation?.id) inputRef.current?.focus(); }, [conversation?.id]);
+  // Reply should immediately place the cursor in the composer.
+  useEffect(() => { if (replyTo) inputRef.current?.focus(); }, [replyTo]);
   useEffect(() => {
     if (!conversation?.id || !currentProfile?.id) return;
     let alive = true;
@@ -427,7 +429,16 @@ function ChatPanel({ conversation, other, currentProfile, messages, onSend, onSe
   };
   const jumpToMessage = async messageId => {
     if (!messageId || !conversation?.id) return;
-    const scrollToTarget = () => document.getElementById(`message-${messageId}`)?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    const scrollToTarget = () => {
+      const target = document.getElementById(`message-${messageId}`);
+      if (!target) return;
+      target.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      target.classList.remove('message-jump-highlight');
+      // Restart the highlight when the same message is opened more than once.
+      void target.offsetWidth;
+      target.classList.add('message-jump-highlight');
+      window.setTimeout(() => target.classList.remove('message-jump-highlight'), 1900);
+    };
     if (document.getElementById(`message-${messageId}`)) { scrollToTarget(); return; }
     const { data, error } = await supabase.from('messages').select('*').eq('id', messageId).eq('conversation_id', conversation.id).maybeSingle();
     if (error || !data) return;
