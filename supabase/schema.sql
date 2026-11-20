@@ -147,6 +147,8 @@ drop policy if exists "Post authors can upload their own media" on storage.objec
 create policy "Post authors can upload their own media" on storage.objects for insert to authenticated with check (bucket_id='post-media' and (storage.foldername(name))[1]=(select auth.uid())::text);
 drop policy if exists "Members can read media attached to posts" on storage.objects;
 create policy "Members can read media attached to posts" on storage.objects for select to authenticated using (bucket_id='post-media' and exists (select 1 from public.posts p where p.media_path=storage.objects.name));
+drop policy if exists "Post authors can delete their own media" on storage.objects;
+create policy "Post authors can delete their own media" on storage.objects for delete to authenticated using (bucket_id='post-media' and exists (select 1 from public.posts p where p.media_path=storage.objects.name and p.author_id=(select auth.uid())));
 
 -- A participant may change activity metadata, but cannot swap either participant.
 create or replace function public.prevent_chatter_participant_swap()
@@ -231,7 +233,7 @@ do $$ begin
   end if;
 end $;
 
--- Chat attachments (5 MB per file). Keep this bucket public for direct image/video previews.
+-- Chat attachments (5 MB per file). Private media is visible only to conversation participants.
 insert into storage.buckets (id, name, public, file_size_limit, allowed_mime_types)
 values ('chat-media', 'chat-media', false, 5242880, array['image/jpeg','image/png','image/webp','image/gif','video/mp4','video/webm','application/pdf','text/plain'])
 on conflict (id) do update set public = excluded.public, file_size_limit = excluded.file_size_limit, allowed_mime_types = excluded.allowed_mime_types;
