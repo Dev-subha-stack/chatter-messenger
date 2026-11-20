@@ -61,3 +61,8 @@ Deploy over HTTPS, then use the browser's **Install app** or **Add to Home Scree
 - Direct chat attachments: 5 MB.
 - Community post media: 30 MB.
 - Custom emoji images: 512 KB after compression.
+
+
+## Authentication email delivery
+
+Chatter uses Supabase Auth for confirmation and password-reset emails. Configure a valid custom SMTP provider in **Supabase Dashboard → Authentication → SMTP Settings** before allowing public sign-ups. For Gmail SMTP, use an account-specific Google App Password (with 2-Step Verification enabled), not the regular Gmail password. Check Supabase Auth logs for SMTP responses such as `535 5.7.8 BadCredentials` when delivery fails.
