@@ -1,4 +1,4 @@
-const CACHE = 'chatter-shell-v5';
+const CACHE = 'chatter-shell-v6';
 const SHELL = ['/', '/manifest.webmanifest', '/icons/icon-192.svg', '/icons/icon-512.svg'];
 
 self.addEventListener('install', event => {
