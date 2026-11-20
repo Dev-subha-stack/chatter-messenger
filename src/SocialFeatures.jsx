@@ -2,6 +2,7 @@ import React, { useEffect, useRef, useState } from 'react';
 import { Heart, Repeat2, MessageCircle, CornerDownRight, Send, Smile, Trash2, X, Bell, ImagePlus, Search, Plus, Check, BarChart3 } from 'lucide-react';
 import { supabase } from './supabase';
 import { compressMediaFile } from './mediaCompressor';
+import InlineVideoPlayer from './InlineVideoPlayer';
 
 const initials = (name = '?') => name.trim().split(/\s+/).slice(0, 2).map(part => part[0]?.toUpperCase() || '').join('') || '?';
 const mentionIds = (text, profiles, currentUserId) => {
@@ -157,6 +158,7 @@ export function SocialPostCard({ post, onOpenMedia, currentUserId, profiles = {}
     load();
     const channel = supabase.channel(`comment-likes:${post.id}`)
       .on('postgres_changes', { event: '*', schema: 'public', table: 'post_comment_likes' }, load)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'post_comments', filter: `post_id=eq.${post.id}` }, load)
       .subscribe();
     return () => { supabase.removeChannel(channel); };
   }, [post.id]);
@@ -224,7 +226,7 @@ export function SocialPostCard({ post, onOpenMedia, currentUserId, profiles = {}
     <div className="post-comment-thread" key={comment.id}>
       <div className="post-comment-row">
         <SmallAvatar profile={comment.author}/>
-        <div className="post-comment-copy"><b>{comment.author?.display_name || 'Chatter member'}</b><p>{renderRichContent(comment.content, customEmojis)}</p><small>{new Date(comment.created_at).toLocaleString([], { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}</small><div className="post-comment-actions-inline"><button type="button" className={`comment-like-button ${commentLikes.some(row => row.comment_id === comment.id && row.user_id === currentUserId) ? 'liked' : ''}`} onClick={() => toggleCommentLike(comment)} aria-label="Like comment"><Heart size={13} fill={commentLikes.some(row => row.comment_id === comment.id && row.user_id === currentUserId) ? 'currentColor' : 'none'}/><span>{commentLikes.filter(row => row.comment_id === comment.id).length}</span></button><button type="button" className="comment-reply-button" onClick={() => { setReplyTo(comment); setShowComments(true); }}><CornerDownRight size={13}/> Reply</button></div></div>
+        <div className="post-comment-copy"><b>{comment.author?.display_name || 'Chatter member'}</b><p>{renderRichContent(comment.content, customEmojis)}</p><small>{new Date(comment.created_at).toLocaleString([], { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}</small><div className="post-comment-actions-inline"><button type="button" className={`comment-like-button ${commentLikes.some(row => row.comment_id === comment.id && row.user_id === currentUserId) ? 'liked' : ''}`} onClick={() => toggleCommentLike(comment)} aria-pressed={commentLikes.some(row => row.comment_id === comment.id && row.user_id === currentUserId)} aria-label={commentLikes.some(row => row.comment_id === comment.id && row.user_id === currentUserId) ? 'Unlike comment' : 'Like comment'}><Heart size={13} fill={commentLikes.some(row => row.comment_id === comment.id && row.user_id === currentUserId) ? 'currentColor' : 'none'}/><span>{commentLikes.some(row => row.comment_id === comment.id && row.user_id === currentUserId) ? 'Liked' : 'Like'}</span><b>{commentLikes.filter(row => row.comment_id === comment.id).length}</b></button><button type="button" className="comment-reply-button" onClick={() => { setReplyTo(comment); setShowComments(true); }}><CornerDownRight size={13}/> Reply</button></div></div>
       </div>
       {renderThread(comment.id)}
     </div>
@@ -242,7 +244,7 @@ export function SocialPostCard({ post, onOpenMedia, currentUserId, profiles = {}
     {post.content && <p className="post-content">{renderRichContent(post.content, customEmojis)}</p>}
     {post.poll && <PollCard poll={post.poll} currentUserId={currentUserId}/>}
     {post.media_url && image && <button type="button" className="post-media-open media-open-button" onClick={() => onOpenMedia?.({src:post.media_url,type:'image',name:post.media_name})}><img className="post-media-preview" src={post.media_url} alt={post.media_name || 'Post image'}/></button>}
-    {post.media_url && video && <button type="button" className="post-media-open post-video-open media-open-button" onClick={() => onOpenMedia?.({src:post.media_url,type:'video',name:post.media_name})}><video className="post-media-preview" src={post.media_url} muted playsInline preload="metadata"/><span className="media-play-mark">▶</span></button>}
+    {post.media_url && video && <InlineVideoPlayer src={post.media_url} label={post.media_name || 'Community video'} className="post-inline-player"/>}
     <div className="post-interaction-bar">
       <button type="button" className={liked ? 'active liked' : ''} onClick={toggleLike}><Heart size={16} fill={liked ? 'currentColor' : 'none'}/><span>{likes.length} Like{likes.length === 1 ? '' : 's'}</span></button>
       <button type="button" className={showComments ? 'active' : ''} onClick={() => setShowComments(value => !value)}><MessageCircle size={16}/><span>{comments.length} Comment{comments.length === 1 ? '' : 's'}</span></button>
