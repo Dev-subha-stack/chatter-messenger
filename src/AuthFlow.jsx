@@ -15,7 +15,7 @@ function getFriendlyAuthError(error, mode) {
   const message = String(error?.message || error || '');
   const code = String(error?.code || error?.error_code || '').toLowerCase();
   const status = Number(error?.status || error?.statusCode || 0);
-  if (/error sending confirmation email|failed to send.*confirmation email|535\\s*5\\.7\\.8|badcredentials|username and password not accepted/i.test(message)) {
+  if (/error sending confirmation email|failed to send.*confirmation email|535\s*5\.7\.8|badcredentials|username and password not accepted/i.test(message)) {
     return {
       kind: 'smtp',
       message: 'Chatter could not send this email because its configured Gmail SMTP login was rejected. The mail server returned 535 BadCredentials. The Chatter admin must open Supabase → Authentication → SMTP Settings and replace the SMTP password with a valid Google App Password (not the normal Gmail password). Until this is corrected, signup confirmations and password-reset emails cannot be delivered. A pending signup may already exist, so do not keep registering the same address.',
