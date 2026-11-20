@@ -303,3 +303,73 @@ button,.primary-button,.icon-button,.quick-action,.chat-row{transition:transform
   .message-reaction-popover{right:-4px}
   .poll-draft-footer{align-items:flex-start}
 }
+
+
+/* Chatter message reactions and reply previews */
+.chatter-app .message-bubble { position: relative; }
+.chatter-app .message-reply-preview {
+  display: grid; width: 100%; min-width: 0; gap: 3px; justify-content: stretch;
+  margin: 0 0 5px; padding: 8px 10px; border: 0; border-left: 3px solid #5dbb98;
+  border-radius: 8px; background: rgba(25,76,61,.12); color: inherit;
+  text-align: left; cursor: pointer; appearance: none; -webkit-appearance: none;
+}
+.chatter-app .message-reply-preview:hover { background: rgba(25,76,61,.19); }
+.chatter-app .message-reply-preview:disabled { cursor: default; opacity: 1; }
+.chatter-app .message-reply-preview small {
+  display: flex; align-items: center; gap: 5px; color: #2d896d; font-size: 10px; font-weight: 750;
+}
+.chatter-app .bubble-theirs .message-reply-preview small { color: #9bd9c3; }
+.chatter-app .message-reply-preview span {
+  display: -webkit-box; overflow: hidden; white-space: normal; overflow-wrap: anywhere;
+  -webkit-box-orient: vertical; -webkit-line-clamp: 2; color: inherit; opacity: .78;
+  font-size: 11px; line-height: 1.35;
+}
+.chatter-app .message-reactions {
+  display: flex; flex-wrap: wrap; align-items: center; gap: 5px; margin: 3px 0 1px;
+}
+.chatter-app .message-reactions button {
+  display: inline-flex; min-width: 0; min-height: 27px; align-items: center; justify-content: center;
+  gap: 5px; padding: 3px 8px; border: 1px solid rgba(91,139,122,.32);
+  border-radius: 999px; background: rgba(18,57,47,.10); color: inherit;
+  font: inherit; font-size: 12px; line-height: 1; cursor: pointer; transition: background .15s,border-color .15s,transform .15s;
+}
+.chatter-app .message-reactions button:hover { transform: translateY(-1px); border-color: rgba(72,174,139,.7); }
+.chatter-app .message-reactions button.selected { border-color: #399b7a; background: rgba(58,174,131,.22); }
+.chatter-app .message-reactions .reaction-emoji { font-size: 14px; line-height: 1; }
+.chatter-app .message-reactions .reaction-count { min-width: 7px; font-size: 10px; font-weight: 750; opacity: .8; }
+.chatter-app .message-meta { position: relative; }
+.chatter-app .message-reaction-tools { display: none; }
+.chatter-app .message-reaction-picker-wrap { position: relative; display: inline-flex; flex: 0 0 auto; transform: none; }
+.chatter-app .message-react-trigger {
+  -webkit-appearance: none !important; appearance: none !important; box-sizing: border-box;
+  display: grid !important; place-items: center; width: 24px !important; height: 24px !important;
+  min-width: 24px; padding: 0 !important; border: 1px solid transparent !important;
+  border-radius: 50% !important; background: transparent !important; box-shadow: none !important;
+  color: currentColor; opacity: .58; cursor: pointer; transition: .15s;
+}
+.chatter-app .message-react-trigger:hover, .chatter-app .message-react-trigger[aria-expanded="true"] {
+  opacity: 1; border-color: rgba(75,166,133,.35) !important; background: rgba(56,147,113,.14) !important;
+}
+.chatter-app .message-reaction-popover {
+  position: absolute; z-index: 20; right: 0; bottom: calc(100% + 8px);
+  display: flex; flex-wrap: nowrap; align-items: center; gap: 3px; padding: 6px;
+  border: 1px solid rgba(160,204,188,.2); border-radius: 14px;
+  background: #172a30; box-shadow: 0 12px 34px rgba(0,0,0,.38);
+}
+.chatter-app .message-reaction-popover button {
+  -webkit-appearance: none; appearance: none; display: grid; place-items: center;
+  width: 32px; height: 32px; min-width: 32px; padding: 0; border: 0;
+  border-radius: 10px; background: transparent; font-size: 19px; line-height: 1; cursor: pointer;
+}
+.chatter-app .message-reaction-popover button:hover { background: rgba(255,255,255,.10); transform: scale(1.08); }
+.chatter-app .message-line.message-highlight .message-bubble {
+  outline: 2px solid rgba(100,210,171,.8); outline-offset: 3px;
+  animation: chatter-message-highlight 1.5s ease-out;
+}
+@keyframes chatter-message-highlight {
+  0% { outline-color: rgba(100,210,171,.9); }
+  100% { outline-color: rgba(100,210,171,0); }
+}
+@media (hover: none) {
+  .chatter-app .message-react-trigger { opacity: .82; }
+}
