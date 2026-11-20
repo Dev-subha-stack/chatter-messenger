@@ -22,6 +22,9 @@ export function renderRichContent(text, customEmojis = []) {
   });
 }
 
+const EMOJI_SEARCH_NAMES = {
+  '😀':'grinning smile happy', '😃':'grin happy smile', '😄':'smile eyes happy', '😁':'beaming grin', '😆':'laughing squint', '😅':'sweat laugh', '😂':'laugh tears joy', '🙂':'smile slightly happy', '😉':'wink', '😊':'blush smile', '🥰':'love hearts face', '😍':'heart eyes love', '🤩':'star struck excited', '😘':'kiss', '🥲':'happy tears', '😋':'yum tasty', '😛':'tongue', '🤪':'zany silly', '🤗':'hug', '🤔':'thinking', '😐':'neutral', '🙄':'eye roll', '😏':'smirk', '😔':'sad', '😭':'cry sob tears', '😴':'sleep tired', '🤯':'mind blown', '🥳':'party celebration', '😎':'cool sunglasses', '🤓':'nerd glasses', '👍':'thumbs up like approve', '👎':'thumbs down dislike', '👏':'clap applause', '🙌':'hooray hands', '🫶':'heart hands', '🙏':'please thanks pray', '💪':'strong muscle', '❤️':'red heart love', '💔':'broken heart', '💕':'two hearts', '🔥':'fire hot', '✨':'sparkles shine', '⭐':'star', '⚡':'lightning', '🎉':'party popper celebration', '🎊':'confetti', '🎈':'balloon', '💯':'hundred perfect', '✅':'check mark done', '❌':'cross no', '💀':'skull', '🤡':'clown', '💩':'poop', '👻':'ghost', '🤖':'robot', '🎮':'video game', '🍕':'pizza', '🍔':'burger hamburger', '🍟':'fries', '🍎':'apple', '🍌':'banana', '🍉':'watermelon', '☕':'coffee', '🧋':'bubble tea', '🚀':'rocket', '🚗':'car', '✈️':'airplane', '🌈':'rainbow', '☀️':'sun', '🌙':'moon', '🐱':'cat', '🐶':'dog', '🦊':'fox', '🐼':'panda', '🦄':'unicorn', '🐸':'frog', '🦋':'butterfly', '🌹':'rose', '💐':'flowers', '🎂':'birthday cake', '🎁':'gift present', '💻':'laptop computer', '📱':'phone mobile'
+};
 const EMOJI_GROUPS = [
   { label: 'Smileys', icons: '😀 😃 😄 😁 😆 😅 😂 🙂 🙃 🫠 😉 😊 😇 🥰 😍 🤩 😘 😗 ☺️ 😚 😙 🥲 😋 😛 😜 🤪 😝 🤑 🤗 🫡 🤭 🫢 🫣 🤫 🤔 🫤 😐 😑 😶 🫥 😏 😒 🙄 😬 😮‍💨 🤥 😌 😔 😪 🤤 😴 😷 🤒 🤕 🤢 🤮 🤧 🥵 🥶 🥴 😵 🤯 🤠 🥳 🥸 😎 🤓 🧐'.split(' ') },
   { label: 'People', icons: '👋 🤚 🖐️ ✋ 🖖 🫱 🫲 🫳 🫴 👌 🤌 🤏 ✌️ 🤞 🫰 🤟 🤘 🤙 👈 👉 👆 🖕 👇 ☝️ 👍 👎 ✊ 👊 🤛 🤜 👏 🙌 🫶 👐 🤲 🙏 💪 🦾 🖖 🫂 👀 👁️ 👶 🧒 👦 👧 🧑 👨 👩 🧔 👱 🧓 👴 👵'.split(' ') },
@@ -37,8 +40,10 @@ export function EmojiPicker({ customEmojis = [], onSelect }) {
   const [category, setCategory] = useState('Smileys');
   const [query, setQuery] = useState('');
   const selectedGroup = EMOJI_GROUPS.find(group => group.label === category) || EMOJI_GROUPS[0];
-  const filtered = query ? EMOJI_GROUPS.flatMap(group => group.icons).filter((emoji, index, all) => all.indexOf(emoji) === index) : selectedGroup.icons;
-  const visibleCustom = (customEmojis || []).filter(item => !query || `:${item.shortcode}:`.toLowerCase().includes(query.toLowerCase()));
+  const allBuiltIn = EMOJI_GROUPS.flatMap(group => group.icons).filter((emoji, index, all) => all.indexOf(emoji) === index);
+  const needle = query.trim().toLowerCase();
+  const filtered = needle ? allBuiltIn.filter(emoji => emoji.includes(needle) || (EMOJI_SEARCH_NAMES[emoji] || '').includes(needle)) : selectedGroup.icons;
+  const visibleCustom = (customEmojis || []).filter(item => !needle || `:${item.shortcode}:`.toLowerCase().includes(needle) || String(item.emoji || '').includes(needle));
   return <div className="emoji-picker-panel" role="dialog" aria-label="Emoji picker">
     <div className="emoji-picker-search"><Search size={14}/><input value={query} onChange={event => setQuery(event.target.value)} placeholder="Search emojis or custom names…"/></div>
     {!query && <div className="emoji-picker-categories">{EMOJI_GROUPS.map(group => <button type="button" key={group.label} className={category === group.label ? 'active' : ''} onClick={() => setCategory(group.label)}>{group.label}</button>)}</div>}
