@@ -15,6 +15,12 @@ function getFriendlyAuthError(error, mode) {
   const message = String(error?.message || error || '');
   const code = String(error?.code || error?.error_code || '').toLowerCase();
   const status = Number(error?.status || error?.statusCode || 0);
+  if (/error sending confirmation email|failed to send.*confirmation email|535\\s*5\\.7\\.8|badcredentials|username and password not accepted/i.test(message)) {
+    return {
+      kind: 'smtp',
+      message: 'Chatter could not send this email because its configured Gmail SMTP login was rejected. The mail server returned 535 BadCredentials. The Chatter admin must open Supabase → Authentication → SMTP Settings and replace the SMTP password with a valid Google App Password (not the normal Gmail password). Until this is corrected, signup confirmations and password-reset emails cannot be delivered. A pending signup may already exist, so do not keep registering the same address.',
+    };
+  }
   if (code === 'over_email_send_rate_limit' || /email rate limit exceeded/i.test(message)) {
     return {
       kind: 'email-limit',
@@ -170,7 +176,8 @@ export function AuthScreen() {
     } catch (caught) {
       const friendly = getFriendlyAuthError(caught, mode);
       setError(friendly.message);
-      if (friendly.kind === 'unconfirmed') setEmailNotConfirmed(true);
+      if (friendly.kind === 'unconfirmed' || friendly.kind === 'smtp') setEmailNotConfirmed(true);
+      if (friendly.kind === 'smtp') startEmailCooldown(60);
       if (friendly.kind === 'email-limit') { startEmailCooldown(60 * 60); if (mode === 'signup') setEmailNotConfirmed(true); }
       if (friendly.kind === 'request-limit') startEmailCooldown(60);
       if (friendly.kind === 'expired-link') setEmailNotConfirmed(mode === 'signup');
@@ -201,7 +208,8 @@ export function AuthScreen() {
     } catch (caught) {
       const friendly = getFriendlyAuthError(caught, 'signup');
       setError(friendly.message);
-      if (friendly.kind === 'email-limit') { startEmailCooldown(60 * 60); setEmailNotConfirmed(true); }
+      if (friendly.kind === 'smtp') { startEmailCooldown(60); setEmailNotConfirmed(true); }
+      else if (friendly.kind === 'email-limit') { startEmailCooldown(60 * 60); setEmailNotConfirmed(true); }
       else if (friendly.kind === 'request-limit') startEmailCooldown(60);
     } finally {
       setResending(false);
