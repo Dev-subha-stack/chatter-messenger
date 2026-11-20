@@ -10,7 +10,7 @@ import { isSupabaseConfigured, supabase } from './supabase';
 import { AppearanceDashboard, AdminDashboard, DEFAULT_APPEARANCE, APPEARANCE_ACCENTS } from './AppearanceAdmin';
 import { AuthScreen, PasswordRecoveryModal } from './AuthFlow';
 import { compressMediaFile, formatMediaBytes } from './mediaCompressor';
-import { SocialPostCard } from './SocialFeatures';
+import { SocialPostCard, NotificationCenter } from './SocialFeatures';
 import './styles.css';
 
 const BRAND = 'Chatter';
@@ -718,8 +718,17 @@ function App() {
   };
 
   const sendMessage = async (content, replyToId = null) => {
-    const { data, error } = await supabase.from('messages').insert({ conversation_id:active.id, sender_id:profile.id, content, reply_to_message_id: replyToId, mentions: getMentionIds(content, profiles, profile.id) }).select().single();
+    const mentions = getMentionIds(content, profiles, profile.id);
+    const { data, error } = await supabase.from('messages').insert({ conversation_id:active.id, sender_id:profile.id, content, reply_to_message_id: replyToId, mentions }).select().single();
     if (error) throw error;
+    if (mentions.length) {
+      const { error: pingError } = await supabase.from('chatter_notifications').insert(mentions.map(recipient_user_id => ({
+        recipient_user_id, actor_user_id: profile.id, notification_type: 'message_mention',
+        target_type: 'conversation', target_id: active.id,
+        body: `You were mentioned in a message by ${profile.display_name || 'a Chatter member'}.`,
+      })));
+      if (pingError) console.warn('Message mention notifications were not delivered:', pingError.message);
+    }
     setMessages(current => current.some(m => m.id === data.id) ? current : [...current, data]);
     loadConversations(profile.id, false);
   };
@@ -738,13 +747,22 @@ function App() {
       });
       if (uploadError) throw uploadError;
     }
-    const { error } = await supabase.from('posts').insert({
-      author_id: profile.id, content: cleaned, mentions: getMentionIds(cleaned, profiles, profile.id), media_path: mediaPath,
+    const mentions = getMentionIds(cleaned, profiles, profile.id);
+    const { data: createdPost, error } = await supabase.from('posts').insert({
+      author_id: profile.id, content: cleaned, mentions, media_path: mediaPath,
       media_type: chosen?.type || null, media_name: chosen?.name || null, media_size: chosen?.size || null
-    });
+    }).select('id').single();
     if (error) {
       if (mediaPath) await supabase.storage.from('post-media').remove([mediaPath]);
       throw error;
+    }
+    if (mentions.length) {
+      const { error: pingError } = await supabase.from('chatter_notifications').insert(mentions.map(recipient_user_id => ({
+        recipient_user_id, actor_user_id: profile.id, notification_type: 'post_mention',
+        target_type: 'post', target_id: createdPost.id,
+        body: `You were mentioned in a post by ${profile.display_name || 'a Chatter member'}.`,
+      })));
+      if (pingError) console.warn('Post mention notifications were not delivered:', pingError.message);
     }
     await loadPosts(false);
     notify('Your post is live.');
@@ -847,7 +865,7 @@ function App() {
   return <div className={`chatter-app ${lightMode ? 'light-mode' : ''} ${appearance.motion==='off'?'no-motion':''}`}
     data-density={appearance.density} data-wallpaper={appearance.wallpaper} data-bubble-style={appearance.bubbleStyle} data-font={appearance.font}
     style={{'--mint':accent.primary,'--mint2':accent.strong,'--mint-dim':accent.dim}}>
-    <header className="app-topbar"><button className="topbar-brand" onClick={()=>{setActiveTab('home');setMobileChatOpen(false);}}><span className="brand-symbol"><MessageCircle size={17} fill="currentColor"/></span><b>chatter</b><i>YOUR SPACE</i></button><div className="topbar-search"><Search size={17}/><input value={search} onChange={e=>setSearch(e.target.value)} placeholder="Search conversations and people"/><kbd>⌘ K</kbd></div><div className="topbar-actions"><button className="icon-button" title="Notifications" onClick={()=>notify('You’re all caught up.')}><Bell size={18}/></button><button className="icon-button" title={lightMode?'Switch to dark mode':'Switch to light mode'} onClick={()=>setAppearance(v=>({...v,theme:lightMode?'dark':'light'}))}>{lightMode?<Moon size={18}/>:<Sun size={18}/>}</button><button className="topbar-profile" onClick={()=>setActiveTab('profile')}><Avatar profile={profile} size="sm"/></button></div></header>
+    <header className="app-topbar"><button className="topbar-brand" onClick={()=>{setActiveTab('home');setMobileChatOpen(false);}}><span className="brand-symbol"><MessageCircle size={17} fill="currentColor"/></span><b>chatter</b><i>YOUR SPACE</i></button><div className="topbar-search"><Search size={17}/><input value={search} onChange={e=>setSearch(e.target.value)} placeholder="Search conversations and people"/><kbd>⌘ K</kbd></div><div className="topbar-actions"><NotificationCenter currentUserId={profile.id}/><button className="icon-button" title={lightMode?'Switch to dark mode':'Switch to light mode'} onClick={()=>setAppearance(v=>({...v,theme:lightMode?'dark':'light'}))}>{lightMode?<Moon size={18}/>:<Sun size={18}/>}</button><button className="topbar-profile" onClick={()=>setActiveTab('profile')}><Avatar profile={profile} size="sm"/></button></div></header>
     <div className="app-content"><nav className="desktop-nav">{tabs.map(t=><button key={t.id} className={activeTab===t.id?'active':''} onClick={()=>{setActiveTab(t.id);setMobileChatOpen(false);}}><t.icon size={18}/><span>{t.label}</span>{t.id==='chats'&&conversations.some(c=>c.unread_count>0)&&<i/>}</button>)}<div className="desktop-nav-foot"><ShieldCheck size={15}/><span>Private by design</span></div></nav>
       <main className="app-main">
         {activeTab==='home'&&<HomeDashboard profile={profile} conversations={conversations} profiles={profiles} posts={posts} loadingPosts={loadingPosts} currentUserId={profile.id} customEmojis={customEmojis} onOpenChats={()=>setActiveTab('chats')} onNewChat={openNewChat} onEditProfile={()=>setActiveTab('profile')} onCreate={()=>setActiveTab('posts')} onViewPosts={()=>setActiveTab('posts')} onOpenMedia={setMediaViewer}/>} 

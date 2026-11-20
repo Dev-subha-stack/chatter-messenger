@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { Heart, Repeat2, MessageCircle, CornerDownRight, Send, Smile, Trash2, X } from 'lucide-react';
+import { Heart, Repeat2, MessageCircle, CornerDownRight, Send, Smile, Trash2, X, Bell } from 'lucide-react';
 import { supabase } from './supabase';
 
 const initials = (name = '?') => name.trim().split(/\s+/).slice(0, 2).map(part => part[0]?.toUpperCase() || '').join('') || '?';
@@ -70,7 +70,18 @@ export function SocialPostCard({ post, onOpenMedia, currentUserId, profiles = {}
       content, mentions: mentionIds(content, profiles, currentUserId),
     }).select('id,post_id,user_id,parent_id,content,mentions,created_at,author:profiles!post_comments_user_id_fkey(id,display_name,username,avatar_url,username_color)').single();
     if (result.error) setError(result.error.message);
-    else { setComments(rows => [...rows, result.data]); setDraft(''); setReplyTo(null); }
+    else {
+      setComments(rows => [...rows, result.data]);
+      if (result.data.mentions?.length) {
+        const { error: pingError } = await supabase.from('chatter_notifications').insert(result.data.mentions.map(recipient_user_id => ({
+          recipient_user_id, actor_user_id: currentUserId, notification_type: 'comment_mention',
+          target_type: 'post', target_id: post.id,
+          body: `You were mentioned in a comment by ${result.data.author?.display_name || 'a Chatter member'}.`,
+        })));
+        if (pingError) console.warn('Comment mention notifications were not delivered:', pingError.message);
+      }
+      setDraft(''); setReplyTo(null);
+    }
     setBusy(false);
   };
   const updateDraft = value => {
@@ -149,5 +160,52 @@ export function EmojiSettings({ currentUserId, customEmojis = [], onChange }) {
     {error && <p className="form-error">{error}</p>}
     <div className="custom-emoji-list">{customEmojis.map(item => <span className="custom-emoji-chip" key={item.id}><b>{item.emoji}</b><small>:{item.shortcode}:</small><button type="button" aria-label={`Remove ${item.shortcode}`} onClick={() => removeEmoji(item)}><Trash2 size={13}/></button></span>)}</div>
     {!customEmojis.length && <p className="custom-emoji-empty">Your personal emoji collection is empty.</p>}
+  </div>;
+}
+
+export function NotificationCenter({ currentUserId }) {
+  const [notifications, setNotifications] = useState([]);
+  const [open, setOpen] = useState(false);
+  const [loading, setLoading] = useState(false);
+  const unread = notifications.filter(item => !item.is_read).length;
+  const refresh = async () => {
+    if (!currentUserId) return;
+    setLoading(true);
+    const { data, error } = await supabase.from('chatter_notifications')
+      .select('id,notification_type,target_type,target_id,body,is_read,created_at,actor:profiles!chatter_notifications_actor_user_id_fkey(display_name,username,avatar_url)')
+      .eq('recipient_user_id', currentUserId).order('created_at', { ascending: false }).limit(30);
+    if (error) console.warn('Could not load notifications:', error.message);
+    else setNotifications(data || []);
+    setLoading(false);
+  };
+  useEffect(() => { refresh(); }, [currentUserId]);
+  useEffect(() => {
+    if (!currentUserId) return;
+    const channel = supabase.channel(`notifications:${currentUserId}`)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'chatter_notifications', filter: `recipient_user_id=eq.${currentUserId}` }, refresh)
+      .subscribe();
+    return () => { supabase.removeChannel(channel); };
+  }, [currentUserId]);
+  const markRead = async item => {
+    if (!item.is_read) {
+      const { error } = await supabase.from('chatter_notifications').update({ is_read: true }).eq('id', item.id).eq('recipient_user_id', currentUserId);
+      if (error) console.warn('Could not mark notification as read:', error.message);
+      else setNotifications(rows => rows.map(row => row.id === item.id ? { ...row, is_read: true } : row));
+    }
+  };
+  return <div className="notification-center">
+    <button type="button" className="icon-button notification-trigger" title="Notifications" aria-label="Notifications" onClick={() => { const next = !open; setOpen(next); if (next) refresh(); }}>
+      <Bell size={18}/>{unread > 0 && <span className="notification-count">{unread > 99 ? '99+' : unread}</span>}
+    </button>
+    {open && <div className="notification-popover">
+      <div className="notification-popover-head"><b>Notifications</b><span>{unread ? `${unread} unread` : 'All caught up'}</span><button type="button" onClick={() => setOpen(false)} aria-label="Close notifications"><X size={15}/></button></div>
+      <div className="notification-items">
+        {loading && !notifications.length ? <p className="notification-empty">Loading notifications…</p> : notifications.length ? notifications.map(item => <button type="button" className={`notification-item ${item.is_read ? '' : 'unread'}`} key={item.id} onClick={() => markRead(item)}>
+          <span className="notification-avatar">{item.actor?.avatar_url ? <img src={item.actor.avatar_url} alt=""/> : initials(item.actor?.display_name || item.actor?.username || 'C')}</span>
+          <span className="notification-copy"><b>{item.actor?.display_name || 'A Chatter member'}</b><small>{item.body}</small><time>{new Date(item.created_at).toLocaleString([], { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}</time></span>
+          {!item.is_read && <i/>}
+        </button>) : <p className="notification-empty">No mentions yet. When someone tags you, they will show up here.</p>}
+      </div>
+    </div>}
   </div>;
 }
