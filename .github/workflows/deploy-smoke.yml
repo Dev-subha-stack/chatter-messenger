@@ -1,0 +1,37 @@
+name: Chatter deployment smoke check
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: chatter-smoke-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  browser-smoke:
+    name: Build and verify app startup
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - name: Install dependencies
+        run: npm install --no-audit --no-fund
+      - name: Install Chromium for the browser test
+        run: npx playwright install --with-deps chromium
+      - name: Build production app
+        run: npm run build
+      - name: Verify React boot imports and production assets
+        run: npm run verify:boot
+      - name: Test real browser startup on desktop and mobile
+        run: npm run smoke:browser
