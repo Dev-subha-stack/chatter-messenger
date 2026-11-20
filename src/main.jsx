@@ -192,9 +192,41 @@ function MessageBubble({ message, mine, onOpenMedia, onReply, replyMessage, onJu
   const quotedSender = quotedSenderId === currentProfile?.id ? 'You' : (quotedSenderId === other?.id ? (other?.display_name || 'message') : 'message');
   const quotedContent = quote?.deleted_at ? 'This message was deleted' : (String(message.reply_to_content || '').trim() || quote?.content || quote?.attachment_name || (quote?.attachment_type?.startsWith('image/') ? 'Photo' : quote?.attachment_type?.startsWith('video/') ? 'Video' : 'Original message'));
   const [messageReactions, setMessageReactions] = useState([]);
-  const [reactionPickerOpen, setReactionPickerOpen] = useState(false);
+  const [contextMenu, setContextMenu] = useState(null);
   const [reactionBusy, setReactionBusy] = useState(false);
+  const longPressTimerRef = useRef(null);
   const reactionChoices = ['❤️','😂','👍','🔥','😮','👏'];
+  const openContextMenu = (x, y) => {
+    const menuWidth = 218;
+    const menuHeight = mine && !message.deleted_at ? 188 : 150;
+    setContextMenu({
+      x: Math.max(10, Math.min(x, window.innerWidth - menuWidth - 10)),
+      y: Math.max(10, Math.min(y, window.innerHeight - menuHeight - 10)),
+    });
+  };
+  const clearLongPress = () => {
+    if (longPressTimerRef.current) window.clearTimeout(longPressTimerRef.current);
+    longPressTimerRef.current = null;
+  };
+  const startLongPress = event => {
+    if (!event.touches?.length) return;
+    const { clientX, clientY } = event.touches[0];
+    clearLongPress();
+    longPressTimerRef.current = window.setTimeout(() => openContextMenu(clientX, clientY), 480);
+  };
+  useEffect(() => {
+    if (!contextMenu) return;
+    const closeOnOutside = event => {
+      if (!event.target.closest?.('.message-context-menu')) setContextMenu(null);
+    };
+    const closeOnEscape = event => { if (event.key === 'Escape') setContextMenu(null); };
+    document.addEventListener('pointerdown', closeOnOutside);
+    document.addEventListener('keydown', closeOnEscape);
+    return () => {
+      document.removeEventListener('pointerdown', closeOnOutside);
+      document.removeEventListener('keydown', closeOnEscape);
+    };
+  }, [contextMenu]);
   useEffect(() => {
     if (!message.id) return;
     let alive = true;
@@ -210,7 +242,7 @@ function MessageBubble({ message, mine, onOpenMedia, onReply, replyMessage, onJu
   }, [message.id]);
   const toggleReaction = async emoji => {
     if (reactionBusy || message.deleted_at) return;
-    setReactionBusy(true); setReactionPickerOpen(false);
+    setReactionBusy(true); setContextMenu(null);
     const exists = messageReactions.some(row => row.user_id === currentProfile?.id && row.emoji === emoji);
     const result = exists
       ? await supabase.from('message_reactions').delete().eq('message_id', message.id).eq('user_id', currentProfile.id).eq('emoji', emoji)
@@ -226,11 +258,20 @@ function MessageBubble({ message, mine, onOpenMedia, onReply, replyMessage, onJu
     catch (error) { window.alert(error?.message || 'Could not edit this message.'); }
   };
   const deleteThis = async () => {
+    setContextMenu(null);
     if (!window.confirm('Delete this message for everyone in this chat?')) return;
     try { await onDelete?.(message.id); }
     catch (error) { window.alert(error?.message || 'Could not delete this message.'); }
   };
-  return <div id={`message-${message.id}`} className={`message-line ${mine ? 'mine' : 'theirs'}`}><div className={`message-bubble ${mine ? 'bubble-mine' : 'bubble-theirs'}`}>
+  return <div id={`message-${message.id}`} className={`message-line ${mine ? 'mine' : 'theirs'}`}><div
+    className={`message-bubble ${mine ? 'bubble-mine' : 'bubble-theirs'}`}
+    onContextMenu={event => { event.preventDefault(); clearLongPress(); openContextMenu(event.clientX, event.clientY); }}
+    onTouchStart={startLongPress}
+    onTouchEnd={clearLongPress}
+    onTouchMove={clearLongPress}
+    onTouchCancel={clearLongPress}
+    title="Right-click or press and hold for message actions"
+  >
     {quote && <button type="button" className="message-reply-preview" onClick={() => onJumpToMessage?.(quote.id || message.reply_to_message_id)} disabled={!quote.id && !message.reply_to_message_id} title="Jump to original message"><small><CornerDownRight size={11}/> Replying to {quotedSender}</small><span>{renderRichContent(quotedContent, customEmojis)}</span></button>}
     {message.deleted_at ? <span className="deleted-message">This message was deleted</span> : <>
       {message.attachment_url && (isImage
@@ -243,20 +284,19 @@ function MessageBubble({ message, mine, onOpenMedia, onReply, replyMessage, onJu
         : message.content && message.content !== '📊 Poll' && (!message.attachment_url || message.content !== message.attachment_name) && <span className="message-content">{renderRichContent(message.content, customEmojis)}</span>}
       {message.poll && <PollCard poll={message.poll} currentUserId={currentProfile?.id}/>}
     </>}
-    <div className="message-reaction-row">
-      {messageReactions.length > 0 && <div className="message-reactions" aria-label="Message reactions">{[...new Set(messageReactions.map(row => row.emoji))].map(emoji => { const rows = messageReactions.filter(row => row.emoji === emoji); const mineReaction = rows.some(row => row.user_id === currentProfile?.id); return <button type="button" key={emoji} className={mineReaction ? 'selected' : ''} onClick={() => toggleReaction(emoji)} disabled={reactionBusy} aria-pressed={mineReaction} aria-label={`${emoji}, ${rows.length} reactions`}><span className="reaction-emoji">{emoji}</span><span className="reaction-count">{rows.length}</span></button>; })}</div>}
-      {!message.deleted_at && <div className="message-reaction-picker-wrap"><button type="button" className="message-react-trigger" onClick={() => setReactionPickerOpen(value => !value)} aria-label="Add reaction" aria-expanded={reactionPickerOpen} title="Add reaction"><Smile size={14}/><span>React</span></button>{reactionPickerOpen && <div className="message-reaction-popover" role="group" aria-label="Choose a reaction">{reactionChoices.map(emoji => <button type="button" key={emoji} onClick={() => toggleReaction(emoji)} aria-label={emoji}>{emoji}</button>)}</div>}</div>}
-    </div>
-    <div className="message-footer">
-      <div className="message-meta"><time>{timeLabel(message.created_at)}{message.edited_at && !message.deleted_at ? ' · edited' : ''}</time>{mine && <CheckCheck size={14} className="read-tick" aria-label="Sent"/>}</div>
-      <div className="message-actions">
-        <button type="button" className="message-action-button reply" onClick={onReply} title="Reply to message"><CornerDownRight size={13}/><span>Reply</span></button>
-        {mine && !message.deleted_at && !editing && <>
-          <button type="button" className="message-action-button edit" onClick={() => {setDraft(message.content || '');setEditing(true)}} title="Edit message"><Pencil size={13}/><span>Edit</span></button>
-          <button type="button" className="message-action-button delete" onClick={deleteThis} title="Delete message"><Trash2 size={13}/><span>Delete</span></button>
-        </>}
-      </div>
-    </div>
+    {messageReactions.length > 0 && <div className="message-reaction-row" aria-label="Message reactions">{[...new Set(messageReactions.map(row => row.emoji))].map(emoji => { const rows = messageReactions.filter(row => row.emoji === emoji); const mineReaction = rows.some(row => row.user_id === currentProfile?.id); return <button type="button" key={emoji} className={mineReaction ? 'selected' : ''} onClick={() => toggleReaction(emoji)} disabled={reactionBusy} aria-pressed={mineReaction} aria-label={`${emoji}, ${rows.length} reactions`}><span className="reaction-emoji">{emoji}</span><span className="reaction-count">{rows.length}</span></button>; })}
+    </div>}
+    <div className="message-meta"><time>{timeLabel(message.created_at)}{message.edited_at && !message.deleted_at ? ' · edited' : ''}</time>{mine && <CheckCheck size={14} className="read-tick" aria-label="Sent"/>}</div>
+    {contextMenu && <div className="message-context-menu" role="menu" style={{left:contextMenu.x,top:contextMenu.y}} onPointerDown={event => event.stopPropagation()} onContextMenu={event => event.preventDefault()}>
+      <div className="message-context-label">React</div>
+      <div className="message-context-reactions">{reactionChoices.map(emoji => <button type="button" key={emoji} role="menuitem" onClick={() => toggleReaction(emoji)} aria-label={`React with ${emoji}`}>{emoji}</button>)}</div>
+      <div className="message-context-separator"/>
+      <button type="button" className="message-context-action" onClick={() => { setContextMenu(null); onReply?.(); }}><CornerDownRight size={15}/> Reply</button>
+      {mine && !message.deleted_at && !editing && <>
+        <button type="button" className="message-context-action" onClick={() => {setDraft(message.content || '');setEditing(true);setContextMenu(null);}}><Pencil size={15}/> Edit message</button>
+        <button type="button" className="message-context-action danger" onClick={deleteThis}><Trash2 size={15}/> Delete message</button>
+      </>}
+    </div>}
   </div></div>;
 }
 
@@ -314,7 +354,7 @@ function ChatPanel({ conversation, other, currentProfile, messages, onSend, onSe
     typingTimerRef.current = window.setTimeout(() => channel.send({type:'broadcast',event:'typing',payload:{user_id:currentProfile.id,typing:false}}).catch(()=>{}),1800);
   };
   const mentionMatch = draft.match(/@([a-z0-9_]*)$/i);
-  const mentionCandidates = mentionMatch ? Object.values(profiles || {}).filter(person => person.id !== currentProfile?.id && String(person.username || '').toLowerCase().startsWith(mentionMatch[1].toLowerCase())).slice(0,5) : [];
+  const mentionCandidates = mentionMatch && other?.id && String(other.username || '').toLowerCase().startsWith(mentionMatch[1].toLowerCase()) ? [other] : [];
   const chooseMention = person => setDraft(value => value.replace(/@([a-z0-9_]*)$/i, `@${person.username} `));
   const chooseFile = async file => {
     if (!file) return;
@@ -1063,13 +1103,28 @@ function App() {
   };
 
   const sendMessage = async (content, replyToId = null, replyTo = null, pollDraft = null) => {
-  const mentions = getMentionIds(content, profiles, profile.id);
+    const handles = [...new Set([...String(content || '').matchAll(/@([a-z0-9_]+)/gi)].map(match => match[1].toLowerCase()))];
+    let mentions = [];
+    if (handles.length && active?.other_id) {
+      const { data: mentionedProfiles, error: mentionLookupError } = await supabase
+        .from('profiles').select('id,username').in('username', handles);
+      if (mentionLookupError) {
+        console.warn('Could not resolve message mentions:', mentionLookupError.message);
+      } else {
+        // Chatter chats are private one-to-one conversations: only the other participant can be pinged here.
+        mentions = (mentionedProfiles || [])
+          .filter(person => person.id === active.other_id && person.id !== profile.id)
+          .map(person => person.id);
+      }
+    }
     const replySnapshot = replyToId ? {
       reply_to_message_id: replyToId,
       reply_to_sender_id: replyTo?.sender_id || null,
       reply_to_content: replyTo?.deleted_at ? 'This message was deleted' : (replyTo?.content || replyTo?.attachment_name || (replyTo?.attachment_type?.startsWith('image/') ? 'Photo' : replyTo?.attachment_type?.startsWith('video/') ? 'Video' : replyTo?.poll ? '📊 Poll' : 'Attachment')),
     } : { reply_to_message_id: null, reply_to_sender_id: null, reply_to_content: null };
-    const { data, error } = await supabase.from('messages').insert({ conversation_id:active.id, sender_id:profile.id, content, ...replySnapshot, mentions }).select().single();
+    const { data, error } = await supabase.from('messages').insert({
+      conversation_id:active.id, sender_id:profile.id, content, ...replySnapshot, mentions
+    }).select().single();
     if (error) throw error;
     if (pollDraft) {
       try {
@@ -1080,20 +1135,24 @@ function App() {
         throw pollError;
       }
     }
-    if (mentions.length) {
-      const { error: pingError } = await supabase.from('chatter_notifications').insert(mentions.map(recipient_user_id => ({
-        recipient_user_id, actor_user_id: profile.id, notification_type: 'message_mention',
-        target_type: 'conversation', target_id: active.id,
-        body: `You were mentioned in a message by ${profile.display_name || 'a Chatter member'}.`,
-      })));
-      if (pingError) console.warn('Message mention notifications were not delivered:', pingError.message);
-    }
+    // The original message remains in this private DM; send one alert to its other participant.
     if (active?.other_id && active.other_id !== profile.id) {
-      const { error: noticeError } = await supabase.from('chatter_notifications').insert({
-        recipient_user_id: active.other_id, actor_user_id: profile.id, notification_type: 'new_message',
-        target_type: 'conversation', target_id: active.id, body: 'Sent you a message: ' + String(content || '').slice(0,100),
-      });
-      if (noticeError) console.warn('Message notification could not be saved:', noticeError.message);
+      const wasPinged = mentions.includes(active.other_id);
+      const notice = {
+        recipient_user_id: active.other_id,
+        actor_user_id: profile.id,
+        notification_type: wasPinged ? 'message_mention' : 'new_message',
+        target_type: 'conversation',
+        target_id: active.id,
+        body: wasPinged
+          ? `You were pinged by ${profile.display_name || 'a Chatter member'}: ${String(content || 'sent you a message').slice(0, 115)}`
+          : 'Sent you a message: ' + String(content || '').slice(0, 100),
+      };
+      const { error: noticeError } = await supabase.from('chatter_notifications').insert(notice);
+      if (noticeError) {
+        console.warn('Message notification could not be saved:', noticeError.message);
+        notify('Message sent, but the ping notification could not be saved.');
+      }
     }
     setMessages(current => current.some(m => m.id === data.id) ? current : [...current, data]);
     loadConversations(profile.id, false);
