@@ -6,8 +6,10 @@ Chatter is a mobile-first messaging and social web app built with React, Vite an
 
 ### Messaging
 - Real-time one-to-one chats, online presence and typing indicators.
-- Message replies, editing and soft deletion.
-- Reactions on messages with live reaction counts.
+- Message replies, editing and soft deletion from a WhatsApp-style right-click or press-and-hold action menu.
+- Quick emoji reactions from the message action menu, with live reaction counts.
+- @pings to the other participant in a private chat, delivered as a message notification.
+- Optional in-app sound alerts for incoming messages and pings (enable sound with the toggle in Notifications).
 - Polls inside messages, including single-choice and multiple-choice voting.
 - In-app notifications for new messages, mentions and followers.
 - Private image, GIF, video, PDF and TXT attachments.
