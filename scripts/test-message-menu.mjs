@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import { readFile } from 'node:fs/promises';
 import { getMessageContextMenuPosition } from '../src/messageContextMenu.js';
 
 const centered = getMessageContextMenuPosition({
@@ -37,4 +38,12 @@ assert.deepEqual(
   'The same pointer anchor must produce the same position; it must never accumulate offsets.',
 );
 
-console.log('MESSAGE MENU TESTS PASSED: center, bottom-right, top-left, and stable positioning.');
+const mainSource = await readFile(new URL('../src/main.jsx', import.meta.url), 'utf8');
+const cssSource = await readFile(new URL('../src/styles.css', import.meta.url), 'utf8');
+assert.match(mainSource, /onContextMenu=\{event => \{ event\.preventDefault\(\);[\s\S]*?openContextMenu\(event\.clientX, event\.clientY\); \}\}/, 'Right-click must open the message action menu.');
+assert.match(mainSource, /className="message-react-open"/, 'A visible click-to-react button must be present.');
+assert.match(mainSource, /createPortal\([\s\S]*?className="message-context-menu"/, 'The action menu must be rendered through the portal.');
+assert.match(cssSource, /(?:^|\n)\.message-context-menu\s*\{[^}]*position:\s*fixed\s*!important;[^}]*z-index:\s*100000\s*!important;/, 'Portal menu styles must be global, fixed and above the app.');
+assert.doesNotMatch(cssSource, /\.chatter-app\s+\.message-context-menu\s*\{[^}]*position:\s*fixed/, 'Portal positioning must not depend on .chatter-app ancestry.');
+
+console.log('MESSAGE MENU TESTS PASSED: viewport edges, stable positioning, right-click, click-to-react, portal rendering and global portal styling.');
