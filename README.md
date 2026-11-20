@@ -11,7 +11,7 @@ Chatter is a mobile-first messaging and social web app built with React, Vite an
 - Polls inside messages, including single-choice and multiple-choice voting.
 - In-app notifications for new messages, mentions and followers.
 - Private image, GIF, video, PDF and TXT attachments.
-- In-app video viewer with custom play/pause, seek, volume and an optional fullscreen button. Videos open paused and inline by default.
+- Custom inline video player in chats and posts with play/pause, seek, volume and a separate optional fullscreen button. Videos start paused in the feed or conversation instead of opening a fullscreen overlay.
 - Per-conversation wallpapers and optional on-device media compression.
 
 ### Community
@@ -22,7 +22,7 @@ Chatter is a mobile-first messaging and social web app built with React, Vite an
 
 ### Profiles
 - Editable display name, username, bio, avatar, banner and username colour.
-- Profile status text, custom profile theme colour and up to five clickable links.
+- Profile status text, custom profile theme colour, three public profile card styles (gradient, glass and minimal) and up to five clickable links.
 - Follow/unfollow, follower and following counts, and new-follower notifications.
 
 ### Emoji
@@ -31,7 +31,7 @@ Chatter is a mobile-first messaging and social web app built with React, Vite an
 - Shared public-read emoji images rendered by shortcode across users.
 
 ### App customisation and PWA
-- Dark/light/system appearance, preset or custom accent colour, message text size, layout density, bubble shape, typeface, chat background and motion settings.
+- Dark/light/system appearance, preset or custom accent colour, message text size and width, layout density, bubble shape, typeface, chat background and motion settings.
 - PWA manifest, app icons and service worker for installability and offline shell caching.
 - Profile, presence, reactions and poll votes update in real time.
 
