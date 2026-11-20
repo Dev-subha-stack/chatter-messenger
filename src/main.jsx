@@ -191,20 +191,67 @@ function PublicProfileModal({ profile, onClose }) {
 }
 
 
-function HomeDashboard({ profile, conversations, profiles, onOpenChats, onNewChat, onEditProfile, onCreate }) {
+function PostCard({ post }) {
+  const author = post.author || {};
+  return <article className="post-card">
+    <div className="post-card-head">
+      <Avatar profile={author} size="md"/>
+      <div className="post-card-author">
+        <strong>{author.display_name || 'Chatter member'}</strong>
+        <small><span style={{color:author.username_color || '#A3E6D3'}}>@{author.username || 'member'}</span><span className="post-dot">·</span><time dateTime={post.created_at} title={fullTime(post.created_at)}>{timeLabel(post.created_at)}</time></small>
+      </div>
+    </div>
+    <p className="post-content">{post.content}</p>
+  </article>;
+}
+
+function PostFeed({ posts, loading }) {
+  if (loading && !posts.length) return <div className="post-feed-state">Loading community posts…</div>;
+  if (!posts.length) return <div className="feed-empty-card"><div className="feed-empty-art"><Sparkles size={24}/></div><div><b>Your feed is ready for good moments.</b><p>There are no updates yet. Start the conversation by sharing the first post.</p></div></div>;
+  return <div className="post-feed">{posts.map(post => <PostCard key={post.id} post={post}/>)}</div>;
+}
+
+function HomeDashboard({ profile, conversations, profiles, posts, loadingPosts, onOpenChats, onNewChat, onEditProfile, onCreate }) {
   const recent = conversations.slice(0, 3);
   return <section className="home-dashboard">
     <div className="home-welcome"><div><span className="eyebrow">YOUR SPACE, YOUR PEOPLE</span><h1>Good to see you, <em>{profile?.display_name?.split(' ')[0] || 'friend'}.</em></h1><p>A little hello can make someone's day.</p></div><div className="welcome-orb"><MessageCircle size={31}/><span>✦</span></div></div>
     <div className="home-quick-actions"><button className="quick-action primary" onClick={onNewChat}><span><Plus size={19}/></span><b>New chat</b><small>Say hello to someone</small></button><button className="quick-action" onClick={onOpenChats}><span><MessageSquare size={19}/></span><b>Messages</b><small>Pick up where you left off</small></button><button className="quick-action" onClick={onEditProfile}><span><UserCircle size={19}/></span><b>Your profile</b><small>Make it yours</small></button></div>
     <div className="home-feed-heading"><div><span className="eyebrow">YOUR COMMUNITY</span><h2>Your feed</h2><p>Little updates from the people you care about.</p></div><button className="primary-button" onClick={onCreate}><Plus size={15}/> Create a post</button></div>
-    <div className="feed-empty-card"><div className="feed-empty-art"><Sparkles size={24}/></div><div><b>Your feed is ready for good moments.</b><p>When your friends share updates, they’ll show up here. Start by sharing something yourself.</p><button className="text-button" onClick={onCreate}>Share your first update <ArrowRight size={14}/></button></div></div>
+    <PostFeed posts={posts} loading={loadingPosts}/>
     <div className="home-section-heading"><div><span className="eyebrow">KEEP IN TOUCH</span><h2>Recent conversations</h2></div><button className="text-button" onClick={onOpenChats}>View all <ArrowRight size={14}/></button></div>
     {recent.length ? <div className="home-recent-list">{recent.map(c => { const person=profiles[c.other_id] || {}; return <button className="home-recent-row" key={c.id} onClick={onOpenChats}><Avatar profile={person} size="lg"/><span><b>{person.display_name || 'Chatter member'}</b><small>{c.last_message?.content || 'Start a conversation'}</small></span><time>{timeLabel(c.last_message?.created_at || c.updated_at)}</time><ArrowRight size={15}/></button>; })}</div> : <div className="home-empty"><div className="empty-icon"><MessageCircle size={21}/></div><b>Your conversations start here</b><p>Find a friend and start your first Chatter conversation.</p><button className="primary-button" onClick={onNewChat}>Find people <ArrowRight size={15}/></button></div>}
     <div className="home-note"><div className="home-note-icon"><ShieldCheck size={18}/></div><div><b>A calmer corner of the internet.</b><p>Chatter is made for meaningful conversations, without the noise.</p></div></div>
   </section>;
 }
-function CreateDashboard({ onNewChat }) { return <section className="simple-dashboard"><span className="eyebrow">MAKE SOMETHING HAPPEN</span><h1>Create <em>something.</em></h1><p>Share a moment or start a conversation. More ways to create are coming soon.</p><div className="create-options"><button onClick={onNewChat}><span><MessageSquare size={21}/></span><b>Start a conversation</b><small>Send a message to someone</small><ArrowRight size={16}/></button><button onClick={onNewChat}><span><Image size={21}/></span><b>Share a moment</b><small>Media posts are coming next</small><ArrowRight size={16}/></button></div></section>; }
 
+function CreateDashboard({ profile, posts, loadingPosts, onCreatePost, onNewChat }) {
+  const [content, setContent] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState('');
+  const submit = async event => {
+    event.preventDefault();
+    const cleaned = content.trim();
+    if (!cleaned || busy) return;
+    setBusy(true); setError('');
+    try { await onCreatePost(cleaned); setContent(''); }
+    catch (caught) { setError(caught?.message || 'Could not publish your post.'); }
+    finally { setBusy(false); }
+  };
+  return <section className="simple-dashboard create-dashboard">
+    <span className="eyebrow">SHARE SOMETHING</span>
+    <h1>Make a <em>post.</em></h1>
+    <p>Share a small update with everyone in your Chatter community.</p>
+    <form className="post-composer" onSubmit={submit}>
+      <div className="post-composer-head"><Avatar profile={profile} size="md"/><span>Posting as <b>{profile?.display_name || 'you'}</b></span></div>
+      <textarea value={content} onChange={event => setContent(event.target.value)} maxLength={1000} rows={5} placeholder="What's happening? Share an update…" aria-label="Write a post"/>
+      <div className="post-composer-footer"><span>{content.length}/1000</span><button type="submit" className="primary-button" disabled={!content.trim() || busy}>{busy ? 'Publishing…' : 'Publish post'}<ArrowUp size={15}/></button></div>
+      {error && <div className="form-error" role="alert">{error}</div>}
+    </form>
+    <div className="create-feed-heading"><span className="eyebrow">COMMUNITY UPDATES</span><h2>Recent posts</h2></div>
+    <PostFeed posts={posts} loading={loadingPosts}/>
+    <button className="text-button create-chat-link" onClick={onNewChat}><MessageSquare size={15}/> Start a conversation instead</button>
+  </section>;
+}
 function App() {
   const [session, setSession] = useState(null);
   const [authLoading, setAuthLoading] = useState(true);
@@ -212,6 +259,8 @@ function App() {
   const [profile, setProfile] = useState(null);
   const [profiles, setProfiles] = useState({});
   const [conversations, setConversations] = useState([]);
+  const [posts, setPosts] = useState([]);
+  const [loadingPosts, setLoadingPosts] = useState(false);
   const [active, setActive] = useState(null);
   const [messages, setMessages] = useState([]);
   const [loadingChats, setLoadingChats] = useState(false);
@@ -299,6 +348,23 @@ function App() {
     setProfile(created); return created;
   }, []);
 
+  const loadPosts = useCallback(async (showLoader = true) => {
+    if (showLoader) setLoadingPosts(true);
+    try {
+      const { data, error } = await supabase.from('posts')
+        .select('id,author_id,content,created_at,author:profiles!posts_author_id_fkey(id,display_name,username,avatar_url,username_color)')
+        .order('created_at', { ascending: false })
+        .limit(50);
+      if (error) throw error;
+      setPosts(data || []);
+    } catch (error) {
+      console.error('Could not load Chatter posts:', error);
+      notify('Could not load community posts.');
+    } finally {
+      if (showLoader) setLoadingPosts(false);
+    }
+  }, []);
+
   const loadConversations = useCallback(async (userId, showLoader = true) => {
     if (showLoader) setLoadingChats(true);
     try {
@@ -334,6 +400,19 @@ function App() {
     (async () => { try { const p = await loadProfile(session.user); if (!alive) return; await loadConversations(p.id); } catch (e) { console.error(e); notify(e.message || 'Could not load your account.'); } })();
     return () => { alive = false; };
   }, [session?.user?.id, loadProfile, loadConversations]);
+
+  useEffect(() => {
+    if (!profile?.id || !supabase) {
+      setPosts([]);
+      setLoadingPosts(false);
+      return;
+    }
+    loadPosts();
+    const channel = supabase.channel('chatter:posts')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'posts' }, () => loadPosts(false))
+      .subscribe();
+    return () => { supabase.removeChannel(channel); };
+  }, [profile?.id, loadPosts]);
 
   useEffect(() => {
     let cancelled = false;
@@ -439,6 +518,13 @@ function App() {
     loadConversations(profile.id, false);
   };
 
+  const createPost = async content => {
+    const { error } = await supabase.from('posts').insert({ author_id: profile.id, content: content.trim() });
+    if (error) throw error;
+    await loadPosts(false);
+    notify('Your post is live.');
+  };
+
   const sendAttachment = async (file, caption='') => {
     if(file.size>5*1024*1024) throw new Error('Files must be 5 MB or smaller.');
     const ext=(file.name.split('.').pop()||'bin').toLowerCase();
@@ -494,9 +580,9 @@ function App() {
     <header className="app-topbar"><button className="topbar-brand" onClick={()=>{setActiveTab('home');setMobileChatOpen(false);}}><span className="brand-symbol"><MessageCircle size={17} fill="currentColor"/></span><b>chatter</b><i>YOUR SPACE</i></button><div className="topbar-search"><Search size={17}/><input value={search} onChange={e=>setSearch(e.target.value)} placeholder="Search conversations and people"/><kbd>⌘ K</kbd></div><div className="topbar-actions"><button className="icon-button" title="Notifications" onClick={()=>notify('You’re all caught up.')}><Bell size={18}/></button><button className="icon-button" title={lightMode?'Switch to dark mode':'Switch to light mode'} onClick={()=>setAppearance(v=>({...v,theme:lightMode?'dark':'light'}))}>{lightMode?<Moon size={18}/>:<Sun size={18}/>}</button><button className="topbar-profile" onClick={()=>setActiveTab('profile')}><Avatar profile={profile} size="sm"/></button></div></header>
     <div className="app-content"><nav className="desktop-nav">{tabs.map(t=><button key={t.id} className={activeTab===t.id?'active':''} onClick={()=>{setActiveTab(t.id);setMobileChatOpen(false);}}><t.icon size={18}/><span>{t.label}</span>{t.id==='chats'&&conversations.some(c=>c.unread_count>0)&&<i/>}</button>)}<div className="desktop-nav-foot"><ShieldCheck size={15}/><span>Private by design</span></div></nav>
       <main className="app-main">
-        {activeTab==='home'&&<HomeDashboard profile={profile} conversations={conversations} profiles={profiles} onOpenChats={()=>setActiveTab('chats')} onNewChat={openNewChat} onEditProfile={()=>setActiveTab('profile')} onCreate={()=>setActiveTab('create')}/>}
+        {activeTab==='home'&&<HomeDashboard profile={profile} conversations={conversations} profiles={profiles} posts={posts} loadingPosts={loadingPosts} onOpenChats={()=>setActiveTab('chats')} onNewChat={openNewChat} onEditProfile={()=>setActiveTab('profile')} onCreate={()=>setActiveTab('create')}/>}
         {activeTab==='chats'&&<div className={`chat-workspace ${mobileChatOpen?'mobile-open':''}`}><ChatList conversations={conversations} activeId={active?.id} onSelect={openConversation} profiles={profiles} currentProfile={profile} onNewChat={openNewChat} onEditProfile={()=>setActiveTab('profile')} search={search} setSearch={setSearch} loading={loadingChats}/><div className={`main-stage ${mobileChatOpen?'mobile-open':''}`}><ChatPanel conversation={active} other={activeOther} currentProfile={profile} messages={messages} onSend={sendMessage} onSendFile={sendAttachment} loading={loadingMessages} isMobile={mobileChatOpen} onBack={()=>setMobileChatOpen(false)} onOpenProfile={()=>activeOther&&setViewProfile(activeOther)}/></div></div>}
-        {activeTab==='create'&&<CreateDashboard onNewChat={openNewChat}/>}
+        {activeTab==='create'&&<CreateDashboard profile={profile} posts={posts} loadingPosts={loadingPosts} onCreatePost={createPost} onNewChat={openNewChat}/>}
         {activeTab==='appearance'&&<AppearanceDashboard appearance={appearance} onChange={setAppearance} onReset={()=>{setAppearance(DEFAULT_APPEARANCE);notify('Appearance reset for this browser.');}}/>}
         {activeTab==='admin'&&isAdmin&&<AdminDashboard onlineUsers={onlineUsers} currentUserId={profile?.id} onNotify={notify}/>}
         {activeTab==='profile'&&<section className="profile-dashboard"><span className="eyebrow">YOUR ACCOUNT</span><h1>Your <em>profile.</em></h1><div className="profile-dashboard-card"><div className="profile-dashboard-banner" style={profile?.banner_url?{backgroundImage:`url(${profile.banner_url})`}:{}}/><div className="profile-dashboard-info"><Avatar profile={profile} size="xl"/><div><h2>{profile?.display_name}</h2><span style={{color:profile?.username_color || '#A3E6D3'}}>@{profile?.username}</span><p>{profile?.bio||'Add a little about yourself.'}</p></div><button className="primary-button" onClick={()=>setShowProfile(true)}><Settings size={15}/> Edit profile</button></div></div><button className="profile-signout" onClick={signOut}><LogOut size={16}/> Sign out</button></section>}
