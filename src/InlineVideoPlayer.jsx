@@ -110,7 +110,7 @@ export default function InlineVideoPlayer({ src, label = 'Video', className = ''
       }}
       onEnded={() => setPlaying(false)}
     />
-    {!playing && <button type="button" className="inline-video-center-play" onClick={togglePlay} aria-label="Play video"><Play size={24} fill="currentColor"/></button>}
+    {!playing && <button type="button" className="inline-video-center-play" onClick={event => { event.stopPropagation(); togglePlay(); }} aria-label="Play video"><Play size={24} fill="currentColor"/></button>}
     <div className="inline-video-controls" onClick={event => event.stopPropagation()}>
       <button type="button" onClick={togglePlay} aria-label={playing ? 'Pause video' : 'Play video'}>{playing ? <Pause size={16}/> : <Play size={16}/>}</button>
       <span className="inline-video-time">{formatTime(currentTime)}</span>
@@ -121,7 +121,10 @@ export default function InlineVideoPlayer({ src, label = 'Video', className = ''
         max={duration || 0}
         step="0.1"
         value={Math.min(currentTime, duration || 0)}
-        onChange={event => seek(event.target.value)}
+        onInput={event => seek(event.currentTarget.value)}
+        onChange={event => seek(event.currentTarget.value)}
+        onPointerDown={event => event.stopPropagation()}
+        onClick={event => event.stopPropagation()}
         aria-label="Seek video"
       />
       <span className="inline-video-time">{formatTime(duration)}</span>
