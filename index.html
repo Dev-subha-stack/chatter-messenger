@@ -28,8 +28,17 @@
         const rememberError = value => {
           try { window.__CHATTER_BOOT_ERROR__ = String(value || 'Unknown startup error').slice(0, 220); } catch {}
         };
+        const showEarlyBootFailure = () => {
+          const root = document.getElementById('root');
+          if (!root || root.childElementCount > 0) return;
+          root.innerHTML = '<div id="chatter-boot-recovery"><section><h1>Chatter could not start.</h1><p>A startup error stopped the app before it could render. Your account and messages are safe. Reload the page to try again.</p><button id="chatter-retry-button" type="button">Reload Chatter</button><small id="chatter-startup-detail"></small></section></div>';
+          const detail = document.getElementById('chatter-startup-detail');
+          if (detail && window.__CHATTER_BOOT_ERROR__) detail.textContent = 'Startup detail: ' + window.__CHATTER_BOOT_ERROR__;
+          document.getElementById('chatter-retry-button')?.addEventListener('click', () => window.location.reload());
+        };
         window.addEventListener('error', event => {
           if (event?.message) rememberError(event.message);
+          if (event?.message || event?.target?.tagName === 'SCRIPT') window.setTimeout(showEarlyBootFailure, 900);
         });
         window.addEventListener('unhandledrejection', event => {
           rememberError(event?.reason?.message || event?.reason || 'An app startup request failed');
