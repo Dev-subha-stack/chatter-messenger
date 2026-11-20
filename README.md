@@ -17,6 +17,7 @@ Chatter is a mobile-first real-time messaging web app powered by Supabase.
 - Attachment preview before sending, image compression option, oversized-image compression prompt, and upload activity indicator
 - Chat attachments stored in a private bucket; only members of the matching conversation can read them via expiring signed URLs
 - Profile pictures can be cropped square and compressed to 512×512 WebP (up to 500 KB target) before upload when compression is enabled
+- Authenticated members can publish text updates to a real-time community feed; row-level security restricts each post's edits and deletion to its author
 
 ## Run locally
 1. Install Node.js 20+.
