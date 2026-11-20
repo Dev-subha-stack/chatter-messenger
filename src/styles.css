@@ -1220,3 +1220,11 @@ button,.primary-button,.icon-button,.quick-action,.chat-row{transition:transform
 @media(hover:none) {
   .chatter-app .message-react-open { opacity: .9; }
 }
+
+
+/* Keep the click-to-react control discoverable without requiring hover. */
+.chatter-app .message-react-open { opacity: .92 !important; }
+@media(hover:hover) {
+  .chatter-app .message-react-open:hover,
+  .chatter-app .message-react-open:focus-visible { opacity: 1 !important; }
+}
