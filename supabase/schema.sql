@@ -554,6 +554,7 @@ begin
   if exists (select 1 from pg_publication where pubname='supabase_realtime') then
     if not exists (select 1 from pg_publication_tables where pubname='supabase_realtime' and schemaname='public' and tablename='message_reactions') then alter publication supabase_realtime add table public.message_reactions; end if;
     if not exists (select 1 from pg_publication_tables where pubname='supabase_realtime' and schemaname='public' and tablename='post_comment_likes') then alter publication supabase_realtime add table public.post_comment_likes; end if;
+    if not exists (select 1 from pg_publication_tables where pubname='supabase_realtime' and schemaname='public' and tablename='post_comments') then alter publication supabase_realtime add table public.post_comments; end if;
     if not exists (select 1 from pg_publication_tables where pubname='supabase_realtime' and schemaname='public' and tablename='chatter_poll_votes') then alter publication supabase_realtime add table public.chatter_poll_votes; end if;
   end if;
 end $$;
@@ -737,6 +738,7 @@ begin
   if exists (select 1 from pg_publication where pubname='supabase_realtime') then
     if not exists (select 1 from pg_publication_tables where pubname='supabase_realtime' and schemaname='public' and tablename='message_reactions') then alter publication supabase_realtime add table public.message_reactions; end if;
     if not exists (select 1 from pg_publication_tables where pubname='supabase_realtime' and schemaname='public' and tablename='post_comment_likes') then alter publication supabase_realtime add table public.post_comment_likes; end if;
+    if not exists (select 1 from pg_publication_tables where pubname='supabase_realtime' and schemaname='public' and tablename='post_comments') then alter publication supabase_realtime add table public.post_comments; end if;
     if not exists (select 1 from pg_publication_tables where pubname='supabase_realtime' and schemaname='public' and tablename='chatter_poll_votes') then alter publication supabase_realtime add table public.chatter_poll_votes; end if;
   end if;
 end $$;
