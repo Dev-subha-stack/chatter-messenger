@@ -21,3 +21,15 @@ create policy "Members can mark their own notifications" on public.chatter_notif
 drop policy if exists "Members can delete their own notifications" on public.chatter_notifications;
 create policy "Members can delete their own notifications" on public.chatter_notifications for delete to authenticated using (recipient_user_id = (select auth.uid()));
 grant select, insert, update, delete on public.chatter_notifications to authenticated;
+
+do $$
+begin
+  if not exists (
+    select 1 from pg_publication_tables
+    where pubname = 'supabase_realtime'
+      and schemaname = 'public'
+      and tablename = 'chatter_notifications'
+  ) then
+    alter publication supabase_realtime add table public.chatter_notifications;
+  end if;
+end $$;
