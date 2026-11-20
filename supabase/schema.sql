@@ -64,7 +64,6 @@ create table if not exists public.posts (
 
 create index if not exists posts_created_at_idx on public.posts (created_at desc);
 create index if not exists posts_author_created_idx on public.posts (author_id, created_at desc);
-create index if not exists posts_author_created_idx on public.posts (author_id, created_at desc);
 create index if not exists messages_conversation_created_idx on public.messages (conversation_id, created_at desc);
 create index if not exists conversation_members_user_idx on public.conversation_members (user_id, conversation_id);
 create index if not exists conversations_updated_idx on public.conversations (updated_at desc);
