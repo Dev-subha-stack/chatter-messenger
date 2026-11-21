@@ -1,4 +1,4 @@
-const CACHE = 'chatter-shell-v6';
+const CACHE = 'chatter-shell-v7';
 const SHELL = ['/', '/manifest.webmanifest', '/icons/icon-192.svg', '/icons/icon-512.svg'];
 
 self.addEventListener('install', event => {
@@ -39,6 +39,34 @@ self.addEventListener('fetch', event => {
   }
 });
 
+
+
+self.addEventListener('push', event => {
+  let payload = {};
+  try {
+    payload = event.data ? event.data.json() : {};
+  } catch {
+    payload = { body: event.data ? event.data.text() : 'You have a new message.' };
+  }
+
+  const isConversation = String(payload.url || '').includes('openConversation=');
+  const options = {
+    body: String(payload.body || 'You have a new notification.').slice(0, 180),
+    icon: payload.icon || '/icons/icon-192.svg',
+    badge: payload.badge || '/icons/icon-192.svg',
+    tag: payload.tag || ('chatter-push-' + (payload.notificationId || Date.now())),
+    renotify: true,
+    vibrate: [120, 60, 120],
+    data: { url: payload.url || '/', notificationId: payload.notificationId || null },
+    actions: Array.isArray(payload.actions) && payload.actions.length
+      ? payload.actions
+      : isConversation
+        ? [{ action: 'reply', title: 'Reply' }, { action: 'open', title: 'Open chat' }]
+        : [{ action: 'open', title: 'Open' }],
+  };
+
+  event.waitUntil(self.registration.showNotification(payload.title || 'Chatter', options));
+});
 
 self.addEventListener('notificationclick', event => {
   const notification = event.notification;
