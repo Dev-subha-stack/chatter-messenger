@@ -477,46 +477,59 @@ function ChatPanel({ conversation, other, currentProfile, messages, onSend, onSe
 
 
 function ProfilePosts({ profile, currentUserId, profiles, customEmojis, onOpenMedia, onCreatePost, layout, onLayoutChange }) {
+  const PAGE_SIZE = 24;
   const [ownPosts, setOwnPosts] = useState([]);
   const [loadingOwnPosts, setLoadingOwnPosts] = useState(true);
+  const [loadingMore, setLoadingMore] = useState(false);
+  const [hasMore, setHasMore] = useState(false);
   const [loadError, setLoadError] = useState('');
+
+  const hydrateProfilePosts = async rows => {
+    const hydrated = await Promise.all((rows || []).map(async post => {
+      if (!post.media_path) return { ...post, media_url: null };
+      try {
+        const { data: signed, error: signedError } = await supabase.storage.from('post-media').createSignedUrl(post.media_path, 3600);
+        if (signedError) console.warn('Could not create a profile post media link:', signedError.message);
+        return { ...post, media_url: signed?.signedUrl || null };
+      } catch (error) {
+        console.warn('Profile post media could not be loaded:', error);
+        return { ...post, media_url: null };
+      }
+    }));
+    return await hydratePollRows(hydrated);
+  };
 
   useEffect(() => {
     if (!profile?.id) {
       setOwnPosts([]);
       setLoadingOwnPosts(false);
+      setHasMore(false);
       return;
     }
     let alive = true;
-    const load = async (showLoader = false) => {
-      if (showLoader) setLoadingOwnPosts(true);
+    const loadFirstPage = async (showLoader = false) => {
+      if (showLoader && alive) setLoadingOwnPosts(true);
       try {
         const { data, error } = await supabase.from('posts')
           .select('id,author_id,content,created_at,media_path,media_type,media_name,media_size,poll_id,author:profiles!posts_author_id_fkey(id,display_name,username,avatar_url,username_color)')
           .eq('author_id', profile.id)
           .order('created_at', { ascending: false })
-          .limit(100);
+          .range(0, PAGE_SIZE - 1);
         if (error) throw error;
-        const hydrated = await Promise.all((data || []).map(async post => {
-          if (!post.media_path) return { ...post, media_url: null };
-          const { data: signed, error: signedError } = await supabase.storage.from('post-media').createSignedUrl(post.media_path, 3600);
-          if (signedError) console.warn('Could not create a profile post media link:', signedError.message);
-          return { ...post, media_url: signed?.signedUrl || null };
-        }));
-        const withPolls = await hydratePollRows(hydrated);
-        if (alive) {
-          setOwnPosts(withPolls);
-          setLoadError('');
-        }
+        const hydrated = await hydrateProfilePosts(data || []);
+        if (!alive) return;
+        setOwnPosts(hydrated);
+        setHasMore((data || []).length === PAGE_SIZE);
+        setLoadError('');
       } catch (error) {
         if (alive) setLoadError(error?.message || 'Could not load your posts.');
       } finally {
         if (alive && showLoader) setLoadingOwnPosts(false);
       }
     };
-    load(true);
-    const channel = supabase.channel(`profile-posts:${profile.id}`)
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'posts', filter: `author_id=eq.${profile.id}` }, () => load(false))
+    loadFirstPage(true);
+    const channel = supabase.channel('profile-posts:' + profile.id)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'posts', filter: 'author_id=eq.' + profile.id }, () => loadFirstPage(false))
       .subscribe();
     return () => {
       alive = false;
@@ -524,14 +537,61 @@ function ProfilePosts({ profile, currentUserId, profiles, customEmojis, onOpenMe
     };
   }, [profile?.id]);
 
+  const loadMore = async () => {
+    if (loadingMore || !hasMore || !profile?.id) return;
+    setLoadingMore(true);
+    setLoadError('');
+    try {
+      const from = ownPosts.length;
+      const { data, error } = await supabase.from('posts')
+        .select('id,author_id,content,created_at,media_path,media_type,media_name,media_size,poll_id,author:profiles!posts_author_id_fkey(id,display_name,username,avatar_url,username_color)')
+        .eq('author_id', profile.id)
+        .order('created_at', { ascending: false })
+        .range(from, from + PAGE_SIZE - 1);
+      if (error) throw error;
+      const hydrated = await hydrateProfilePosts(data || []);
+      setOwnPosts(rows => {
+        const ids = new Set(rows.map(row => row.id));
+        return [...rows, ...hydrated.filter(row => !ids.has(row.id))];
+      });
+      setHasMore((data || []).length === PAGE_SIZE);
+    } catch (error) {
+      setLoadError(error?.message || 'Could not load more posts.');
+    } finally {
+      setLoadingMore(false);
+    }
+  };
+
   const openPost = post => {
-    if (!post.media_url) { onLayoutChange('list'); return; }
+    if (!post.media_url) {
+      onLayoutChange('list');
+      return;
+    }
     onOpenMedia?.({
       src: post.media_url,
       type: post.media_type?.startsWith('video/') ? 'video' : 'image',
       name: post.media_name || 'Post media',
     });
   };
+
+  const renderPostList = () => <div className="profile-post-list">
+    {ownPosts.map(post => {
+      const author = post.author || profile;
+      const isVideo = post.media_type?.startsWith('video/');
+      const isImage = post.media_type?.startsWith('image/');
+      return <article className="profile-list-card" key={post.id}>
+        <div className="profile-list-card-head">
+          <Avatar profile={author} size="md"/>
+          <div><b>{author?.display_name || profile?.display_name || 'You'}</b><small>@{author?.username || profile?.username || 'member'} · {post.created_at ? new Date(post.created_at).toLocaleDateString([], { day: 'numeric', month: 'short', year: 'numeric' }) : ''}</small></div>
+        </div>
+        {post.content && <p className="profile-list-card-content">{renderRichContent(post.content, customEmojis)}</p>}
+        {post.poll && <PollCard poll={post.poll} currentUserId={currentUserId}/>}
+        {post.media_url && isImage && <button type="button" className="profile-list-media" onClick={() => openPost(post)}><img src={post.media_url} alt={post.media_name || 'Post image'} loading="lazy" decoding="async"/></button>}
+        {post.media_url && isVideo && <InlineVideoPlayer src={post.media_url} label={post.media_name || 'Your video'} className="profile-list-video"/>}
+        {!post.media_url && !post.poll && !post.content && <p className="profile-list-card-content">Shared a post.</p>}
+      </article>;
+    })}
+  </div>;
 
   return <section className="profile-posts-section">
     <div className="profile-posts-heading">
@@ -548,22 +608,23 @@ function ProfilePosts({ profile, currentUserId, profiles, customEmojis, onOpenMe
         <button type="button" className="primary-button" onClick={onCreatePost}><Plus size={15}/> Create post</button>
       </div>
     </div>
-    {loadError && <div className="profile-posts-empty" role="status">{loadError}</div>}
+    {loadError && <div className="profile-posts-error" role="status"><span>{loadError}</span><button type="button" onClick={() => window.location.reload()}>Reload Chatter</button></div>}
     {loadingOwnPosts && !ownPosts.length ? <div className="profile-posts-empty">Loading your posts…</div> : !ownPosts.length && !loadError ? <div className="profile-posts-empty">
       <div className="profile-posts-empty-icon"><Image size={22}/></div>
       <b>Your profile is ready for its first post.</b>
       <p>Share a photo, video, thought or poll. Your posts will appear here like a personal feed.</p>
       <button type="button" className="primary-button" onClick={onCreatePost}><Plus size={15}/> Share your first post</button>
-    </div> : layout === 'list' ? <PostFeed posts={ownPosts} loading={loadingPosts} onOpenMedia={onOpenMedia} currentUserId={currentUserId} profiles={profiles} customEmojis={customEmojis}/> :
+    </div> : layout === 'list' ? renderPostList() :
       <div className="profile-post-grid">
         {ownPosts.map(post => {
           const isVideo = post.media_type?.startsWith('video/');
           return <button type="button" className="profile-post-tile" key={post.id} onClick={() => openPost(post)} aria-label={post.media_url ? 'Open post media' : 'View post details'}>
-            {post.media_url && isVideo ? <video src={post.media_url} muted playsInline preload="metadata"/> : post.media_url ? <img src={post.media_url} alt={post.media_name || 'Post'}/> : <span className="profile-post-tile-text">{post.content || 'A poll shared with the community'}</span>}
+            {post.media_url && isVideo ? <video src={post.media_url} muted playsInline preload="none"/> : post.media_url ? <img src={post.media_url} alt={post.media_name || 'Post'} loading="lazy" decoding="async"/> : <span className="profile-post-tile-text">{post.content || 'A poll shared with the community'}</span>}
             <span className="profile-post-tile-meta">{isVideo ? <Play size={14} fill="currentColor"/> : post.poll ? <BarChart3 size={14}/> : post.media_url ? <Image size={14}/> : <MessageCircle size={14}/>}<span>{isVideo ? 'Video' : post.poll ? 'Poll' : post.media_url ? 'Photo' : 'Post'}</span></span>
           </button>;
         })}
       </div>}
+    {hasMore && !loadingOwnPosts && <button type="button" className="profile-load-more" onClick={loadMore} disabled={loadingMore}>{loadingMore ? 'Loading…' : 'Load more posts'}</button>}
   </section>;
 }
 
