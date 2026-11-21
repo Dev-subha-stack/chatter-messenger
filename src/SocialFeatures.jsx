@@ -213,12 +213,17 @@ export function SocialPostCard({ post, onOpenMedia, currentUserId, profiles = {}
     else {
       setComments(rows => [...rows, result.data]);
       if (result.data.mentions?.length) {
-        const { error: pingError } = await supabase.from('chatter_notifications').insert(result.data.mentions.map(recipient_user_id => ({
+        const { data: mentionNotices, error: pingError } = await supabase.from('chatter_notifications').insert(result.data.mentions.map(recipient_user_id => ({
           recipient_user_id, actor_user_id: currentUserId, notification_type: 'comment_mention',
           target_type: 'post', target_id: post.id,
           body: `You were mentioned in a comment by ${result.data.author?.display_name || 'a Chatter member'}.`,
-        })));
+        }))).select('id');
         if (pingError) console.warn('Comment mention notifications were not delivered:', pingError.message);
+        else (mentionNotices || []).forEach(item => {
+          supabase.functions.invoke('chatter-push', { body: { notificationId: item.id } })
+            .then(({ error }) => error && console.warn('Comment mention push could not be delivered:', error.message))
+            .catch(error => console.warn('Comment mention push request failed:', error));
+        });
       }
       setDraft(''); setReplyTo(null);
     }
