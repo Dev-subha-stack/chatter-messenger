@@ -4,6 +4,15 @@ import { supabase } from './supabase';
 import { compressMediaFile } from './mediaCompressor';
 import InlineVideoPlayer from './InlineVideoPlayer';
 
+const WEB_PUSH_PUBLIC_KEY = import.meta.env.VITE_WEB_PUSH_PUBLIC_KEY || '';
+const base64UrlToUint8Array = value => {
+  const padding = '='.repeat((4 - (value.length % 4)) % 4);
+  const base64 = (value + padding).replace(/-/g, '+').replace(/_/g, '/');
+  const binary = window.atob(base64);
+  return Uint8Array.from(binary, character => character.charCodeAt(0));
+};
+
+
 const initials = (name = '?') => name.trim().split(/\s+/).slice(0, 2).map(part => part[0]?.toUpperCase() || '').join('') || '?';
 const mentionIds = (text, profiles, currentUserId) => {
   const handles = [...String(text || '').matchAll(/@([a-z0-9_]+)/gi)].map(match => match[1].toLowerCase());
@@ -351,8 +360,12 @@ export function NotificationCenter({ currentUserId, onOpenNotification }) {
   const [open, setOpen] = useState(false);
   const [loading, setLoading] = useState(false);
   const [soundEnabled, setSoundEnabled] = useState(() => localStorage.getItem('chatter-sound-notifications') !== 'false');
-  const [systemEnabled, setSystemEnabled] = useState(() => localStorage.getItem('chatter-system-notifications') === 'true');
-  const [notificationPermission, setNotificationPermission] = useState(() => typeof Notification === 'undefined' ? 'unsupported' : Notification.permission);
+  const [systemEnabled, setSystemEnabled] = useState(false);
+  const [notificationPermission, setNotificationPermission] = useState(() => {
+    if (typeof Notification === 'undefined' || !('serviceWorker' in navigator) || !('PushManager' in window) || !WEB_PUSH_PUBLIC_KEY) return 'unsupported';
+    return Notification.permission;
+  });
+  const [pushError, setPushError] = useState('');
   const audioContextRef = useRef(null);
   const unread = notifications.filter(item => !item.is_read).length;
 
@@ -382,61 +395,85 @@ export function NotificationCenter({ currentUserId, onOpenNotification }) {
     }
   };
 
+  useEffect(() => {
+    if (!currentUserId || notificationPermission === 'unsupported' || notificationPermission === 'denied') return;
+    let alive = true;
+    (async () => {
+      try {
+        if (Notification.permission !== 'granted') return;
+        const registration = await navigator.serviceWorker.ready;
+        const subscription = await registration.pushManager.getSubscription();
+        if (!subscription) return;
+        const { data, error } = await supabase.from('chatter_push_subscriptions')
+          .select('id,endpoint').eq('user_id', currentUserId);
+        if (error) throw error;
+        if (alive) setSystemEnabled((data || []).some(row => row.endpoint === subscription.endpoint));
+      } catch (error) {
+        console.warn('Could not restore the push subscription state:', error);
+      }
+    })();
+    return () => { alive = false; };
+  }, [currentUserId, notificationPermission]);
 
   const toggleSystemNotifications = async enabled => {
-    if (!enabled) {
-      setSystemEnabled(false);
-      localStorage.setItem('chatter-system-notifications', 'false');
-      return;
-    }
-    if (typeof Notification === 'undefined' || !('serviceWorker' in navigator)) {
+    setPushError('');
+    if (!currentUserId) return;
+    if (!WEB_PUSH_PUBLIC_KEY || typeof Notification === 'undefined' || !('serviceWorker' in navigator) || !('PushManager' in window)) {
       setNotificationPermission('unsupported');
       setSystemEnabled(false);
+      setPushError('Background push is not configured or supported in this browser.');
       return;
     }
     try {
+      if (!enabled) {
+        const registration = await navigator.serviceWorker.ready;
+        const subscription = await registration.pushManager.getSubscription();
+        if (subscription) {
+          const { error: removeError } = await supabase.from('chatter_push_subscriptions')
+            .delete().eq('user_id', currentUserId).eq('endpoint', subscription.endpoint);
+          if (removeError) throw removeError;
+          await subscription.unsubscribe();
+        }
+        setSystemEnabled(false);
+        return;
+      }
+
       const permission = Notification.permission === 'default'
         ? await Notification.requestPermission()
         : Notification.permission;
       setNotificationPermission(permission);
-      const allowed = permission === 'granted';
-      setSystemEnabled(allowed);
-      localStorage.setItem('chatter-system-notifications', String(allowed));
-    } catch (error) {
-      console.warn('System notifications could not be enabled:', error);
-      setSystemEnabled(false);
-      localStorage.setItem('chatter-system-notifications', 'false');
-    }
-  };
+      if (permission !== 'granted') {
+        setSystemEnabled(false);
+        if (permission === 'denied') setPushError('Notifications are blocked. Allow them in your browser or Android site settings, then try again.');
+        return;
+      }
 
-  const showSystemNotification = async notice => {
-    if (!systemEnabled || !notice?.target_id || typeof Notification === 'undefined' || Notification.permission !== 'granted' || !('serviceWorker' in navigator)) return;
-    try {
-      const [{ data: actor }, registration] = await Promise.all([
-        notice.actor_user_id
-          ? supabase.from('profiles').select('display_name,username').eq('id', notice.actor_user_id).maybeSingle()
-          : Promise.resolve({ data: null }),
-        navigator.serviceWorker.ready,
-      ]);
-      const isConversation = notice.target_type === 'conversation';
-      const actorName = actor?.display_name || actor?.username || 'A Chatter member';
-      const targetUrl = isConversation
-        ? `/?openConversation=${encodeURIComponent(notice.target_id)}&reply=1`
-        : '/?openTab=posts';
-      await registration.showNotification(isConversation ? `${actorName} messaged you` : `${actorName} on Chatter`, {
-        body: String(notice.body || 'You have a new notification.').slice(0, 180),
-        icon: '/icons/icon-192.svg',
-        badge: '/icons/icon-192.svg',
-        tag: `chatter-${notice.id || notice.target_id}`,
-        renotify: true,
-        vibrate: [120, 60, 120],
-        actions: isConversation
-          ? [{ action: 'reply', title: 'Reply' }, { action: 'open', title: 'Open chat' }]
-          : [{ action: 'open', title: 'Open' }],
-        data: { url: targetUrl },
-      });
+      const registration = await navigator.serviceWorker.ready;
+      let subscription = await registration.pushManager.getSubscription();
+      if (!subscription) {
+        subscription = await registration.pushManager.subscribe({
+          userVisibleOnly: true,
+          applicationServerKey: base64UrlToUint8Array(WEB_PUSH_PUBLIC_KEY),
+        });
+      }
+      const details = subscription.toJSON();
+      if (!details || !details.endpoint || !details.keys || !details.keys.p256dh || !details.keys.auth) {
+        throw new Error('The browser returned an incomplete push subscription. Try reinstalling Chatter as an app and retry.');
+      }
+      const { error: saveError } = await supabase.from('chatter_push_subscriptions').upsert({
+        user_id: currentUserId,
+        endpoint: details.endpoint,
+        p256dh: details.keys.p256dh,
+        auth: details.keys.auth,
+        updated_at: new Date().toISOString(),
+      }, { onConflict: 'user_id,endpoint' });
+      if (saveError) throw saveError;
+      setSystemEnabled(true);
+      setPushError('');
     } catch (error) {
-      console.warn('Could not show a system notification:', error);
+      console.warn('Could not change the push subscription:', error);
+      setPushError(error && error.message ? error.message : 'Could not enable background push notifications.');
+      setSystemEnabled(false);
     }
   };
 
@@ -456,6 +493,7 @@ export function NotificationCenter({ currentUserId, onOpenNotification }) {
     document.addEventListener('pointerdown', unlock, { once: true });
     return () => document.removeEventListener('pointerdown', unlock);
   }, [soundEnabled]);
+
   const refresh = async () => {
     if (!currentUserId) return;
     setLoading(true);
@@ -469,20 +507,17 @@ export function NotificationCenter({ currentUserId, onOpenNotification }) {
   useEffect(() => { refresh(); }, [currentUserId]);
   useEffect(() => {
     if (!currentUserId) return;
-    const channel = supabase.channel(`notifications:${currentUserId}`)
-      .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'chatter_notifications', filter: `recipient_user_id=eq.${currentUserId}` }, payload => {
+    const channel = supabase.channel('notifications:' + currentUserId)
+      .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'chatter_notifications', filter: 'recipient_user_id=eq.' + currentUserId }, payload => {
         const notice = payload.new;
-        if (notice?.recipient_user_id === currentUserId && notice?.actor_user_id !== currentUserId) {
-          playNotificationSound();
-          if (document.hidden) showSystemNotification(notice);
-        }
+        if (notice && notice.recipient_user_id === currentUserId && notice.actor_user_id !== currentUserId) playNotificationSound();
         refresh();
       })
-      .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'chatter_notifications', filter: `recipient_user_id=eq.${currentUserId}` }, refresh)
-      .on('postgres_changes', { event: 'DELETE', schema: 'public', table: 'chatter_notifications', filter: `recipient_user_id=eq.${currentUserId}` }, refresh)
+      .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'chatter_notifications', filter: 'recipient_user_id=eq.' + currentUserId }, refresh)
+      .on('postgres_changes', { event: 'DELETE', schema: 'public', table: 'chatter_notifications', filter: 'recipient_user_id=eq.' + currentUserId }, refresh)
       .subscribe();
     return () => { supabase.removeChannel(channel); };
-  }, [currentUserId, soundEnabled, systemEnabled]);
+  }, [currentUserId, soundEnabled]);
   const markRead = async item => {
     if (!item.is_read) {
       const { error } = await supabase.from('chatter_notifications').update({ is_read: true }).eq('id', item.id).eq('recipient_user_id', currentUserId);
@@ -490,24 +525,32 @@ export function NotificationCenter({ currentUserId, onOpenNotification }) {
       else setNotifications(rows => rows.map(row => row.id === item.id ? { ...row, is_read: true } : row));
     }
   };
+  const pushHint = pushError
+    || (notificationPermission === 'denied'
+      ? 'Notifications are blocked. Allow them in your browser site settings to enable push.'
+      : notificationPermission === 'unsupported'
+        ? 'Background push needs a supported browser and the configured VAPID public key.'
+        : systemEnabled
+          ? 'Background push is enabled. Reply opens the correct chat with the message composer ready.'
+          : 'Enable push to receive messages when Chatter is in the background or closed.');
   return <div className="notification-center">
     <button type="button" className="icon-button notification-trigger" title="Notifications" aria-label="Notifications" onClick={() => { const next = !open; setOpen(next); if (next) refresh(); }}>
       <Bell size={18}/>{unread > 0 && <span className="notification-count">{unread > 99 ? '99+' : unread}</span>}
     </button>
     {open && <div className="notification-popover">
-      <div className="notification-popover-head"><b>Notifications</b><span>{unread ? `${unread} unread` : 'All caught up'}</span><button type="button" onClick={() => setOpen(false)} aria-label="Close notifications"><X size={15}/></button></div>
+      <div className="notification-popover-head"><b>Notifications</b><span>{unread ? unread + ' unread' : 'All caught up'}</span><button type="button" onClick={() => setOpen(false)} aria-label="Close notifications"><X size={15}/></button></div>
       <label className="notification-sound-setting"><span><Volume2 size={14}/> Sound alerts</span><input type="checkbox" checked={soundEnabled} onChange={event => {
         const enabled = event.target.checked;
         setSoundEnabled(enabled);
         localStorage.setItem('chatter-sound-notifications', String(enabled));
         if (enabled) playNotificationSound(true);
       }}/></label>
-      <label className="notification-sound-setting"><span><BellRing size={14}/> Mobile system alerts + Reply</span><input type="checkbox" checked={systemEnabled} disabled={notificationPermission === 'unsupported' || notificationPermission === 'denied'} onChange={event => toggleSystemNotifications(event.target.checked)}/></label>
-      <p className="notification-permission-hint">{notificationPermission === 'denied' ? 'Notifications are blocked by your browser. Allow them in site settings to enable this.' : notificationPermission === 'unsupported' ? 'System notifications are not supported in this browser.' : 'When Chatter is in the background, tap Reply to open the right chat with the composer ready.'}</p>
+      <label className="notification-sound-setting"><span><BellRing size={14}/> Background push + Reply</span><input type="checkbox" checked={systemEnabled} disabled={notificationPermission === 'unsupported' || notificationPermission === 'denied'} onChange={event => toggleSystemNotifications(event.target.checked)}/></label>
+      <p className="notification-permission-hint">{pushHint}</p>
       <div className="notification-items">
-        {loading && !notifications.length ? <p className="notification-empty">Loading notifications…</p> : notifications.length ? notifications.map(item => <button type="button" className={`notification-item ${item.is_read ? '' : 'unread'}`} key={item.id} onClick={async () => { await markRead(item); setOpen(false); onOpenNotification?.(item); }}>
-          <span className="notification-avatar">{item.actor?.avatar_url ? <img src={item.actor.avatar_url} alt=""/> : initials(item.actor?.display_name || item.actor?.username || 'C')}</span>
-          <span className="notification-copy"><b>{item.actor?.display_name || 'A Chatter member'}</b><small>{item.body}</small><time>{new Date(item.created_at).toLocaleString([], { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}</time></span>
+        {loading && !notifications.length ? <p className="notification-empty">Loading notifications…</p> : notifications.length ? notifications.map(item => <button type="button" className={'notification-item ' + (item.is_read ? '' : 'unread')} key={item.id} onClick={async () => { await markRead(item); setOpen(false); onOpenNotification && onOpenNotification(item); }}>
+          <span className="notification-avatar">{item.actor && item.actor.avatar_url ? <img src={item.actor.avatar_url} alt=""/> : initials((item.actor && (item.actor.display_name || item.actor.username)) || 'C')}</span>
+          <span className="notification-copy"><b>{item.actor && item.actor.display_name ? item.actor.display_name : 'A Chatter member'}</b><small>{item.body}</small><time>{new Date(item.created_at).toLocaleString([], { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}</time></span>
           {!item.is_read && <i/>}
         </button>) : <p className="notification-empty">No notifications yet. Messages, mentions and new followers will show up here.</p>}
       </div>
