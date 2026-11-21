@@ -1,5 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { Heart, Repeat2, MessageCircle, CornerDownRight, Send, Smile, Trash2, X, Bell, ImagePlus, Search, Plus, Check, BarChart3, Volume2 } from 'lucide-react';
+import { Heart, Repeat2, MessageCircle, CornerDownRight, Send, Smile, Trash2, X, Bell, ImagePlus, Search, Plus, Check, BarChart3, Volume2, BellRing } from 'lucide-react';
 import { supabase } from './supabase';
 import { compressMediaFile } from './mediaCompressor';
 import InlineVideoPlayer from './InlineVideoPlayer';
@@ -351,6 +351,8 @@ export function NotificationCenter({ currentUserId, onOpenNotification }) {
   const [open, setOpen] = useState(false);
   const [loading, setLoading] = useState(false);
   const [soundEnabled, setSoundEnabled] = useState(() => localStorage.getItem('chatter-sound-notifications') !== 'false');
+  const [systemEnabled, setSystemEnabled] = useState(() => localStorage.getItem('chatter-system-notifications') === 'true');
+  const [notificationPermission, setNotificationPermission] = useState(() => typeof Notification === 'undefined' ? 'unsupported' : Notification.permission);
   const audioContextRef = useRef(null);
   const unread = notifications.filter(item => !item.is_read).length;
 
@@ -377,6 +379,64 @@ export function NotificationCenter({ currentUserId, onOpenNotification }) {
       oscillator.stop(start + 0.24);
     } catch (error) {
       console.warn('Notification sound could not play:', error);
+    }
+  };
+
+
+  const toggleSystemNotifications = async enabled => {
+    if (!enabled) {
+      setSystemEnabled(false);
+      localStorage.setItem('chatter-system-notifications', 'false');
+      return;
+    }
+    if (typeof Notification === 'undefined' || !('serviceWorker' in navigator)) {
+      setNotificationPermission('unsupported');
+      setSystemEnabled(false);
+      return;
+    }
+    try {
+      const permission = Notification.permission === 'default'
+        ? await Notification.requestPermission()
+        : Notification.permission;
+      setNotificationPermission(permission);
+      const allowed = permission === 'granted';
+      setSystemEnabled(allowed);
+      localStorage.setItem('chatter-system-notifications', String(allowed));
+    } catch (error) {
+      console.warn('System notifications could not be enabled:', error);
+      setSystemEnabled(false);
+      localStorage.setItem('chatter-system-notifications', 'false');
+    }
+  };
+
+  const showSystemNotification = async notice => {
+    if (!systemEnabled || !notice?.target_id || typeof Notification === 'undefined' || Notification.permission !== 'granted' || !('serviceWorker' in navigator)) return;
+    try {
+      const [{ data: actor }, registration] = await Promise.all([
+        notice.actor_user_id
+          ? supabase.from('profiles').select('display_name,username').eq('id', notice.actor_user_id).maybeSingle()
+          : Promise.resolve({ data: null }),
+        navigator.serviceWorker.ready,
+      ]);
+      const isConversation = notice.target_type === 'conversation';
+      const actorName = actor?.display_name || actor?.username || 'A Chatter member';
+      const targetUrl = isConversation
+        ? `/?openConversation=${encodeURIComponent(notice.target_id)}&reply=1`
+        : '/?openTab=posts';
+      await registration.showNotification(isConversation ? `${actorName} messaged you` : `${actorName} on Chatter`, {
+        body: String(notice.body || 'You have a new notification.').slice(0, 180),
+        icon: '/icons/icon-192.svg',
+        badge: '/icons/icon-192.svg',
+        tag: `chatter-${notice.id || notice.target_id}`,
+        renotify: true,
+        vibrate: [120, 60, 120],
+        actions: isConversation
+          ? [{ action: 'reply', title: 'Reply' }, { action: 'open', title: 'Open chat' }]
+          : [{ action: 'open', title: 'Open' }],
+        data: { url: targetUrl },
+      });
+    } catch (error) {
+      console.warn('Could not show a system notification:', error);
     }
   };
 
@@ -411,14 +471,18 @@ export function NotificationCenter({ currentUserId, onOpenNotification }) {
     if (!currentUserId) return;
     const channel = supabase.channel(`notifications:${currentUserId}`)
       .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'chatter_notifications', filter: `recipient_user_id=eq.${currentUserId}` }, payload => {
-        if (payload.new?.recipient_user_id === currentUserId && payload.new?.actor_user_id !== currentUserId) playNotificationSound();
+        const notice = payload.new;
+        if (notice?.recipient_user_id === currentUserId && notice?.actor_user_id !== currentUserId) {
+          playNotificationSound();
+          if (document.hidden) showSystemNotification(notice);
+        }
         refresh();
       })
       .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'chatter_notifications', filter: `recipient_user_id=eq.${currentUserId}` }, refresh)
       .on('postgres_changes', { event: 'DELETE', schema: 'public', table: 'chatter_notifications', filter: `recipient_user_id=eq.${currentUserId}` }, refresh)
       .subscribe();
     return () => { supabase.removeChannel(channel); };
-  }, [currentUserId, soundEnabled]);
+  }, [currentUserId, soundEnabled, systemEnabled]);
   const markRead = async item => {
     if (!item.is_read) {
       const { error } = await supabase.from('chatter_notifications').update({ is_read: true }).eq('id', item.id).eq('recipient_user_id', currentUserId);
@@ -438,6 +502,8 @@ export function NotificationCenter({ currentUserId, onOpenNotification }) {
         localStorage.setItem('chatter-sound-notifications', String(enabled));
         if (enabled) playNotificationSound(true);
       }}/></label>
+      <label className="notification-sound-setting"><span><BellRing size={14}/> Mobile system alerts + Reply</span><input type="checkbox" checked={systemEnabled} disabled={notificationPermission === 'unsupported' || notificationPermission === 'denied'} onChange={event => toggleSystemNotifications(event.target.checked)}/></label>
+      <p className="notification-permission-hint">{notificationPermission === 'denied' ? 'Notifications are blocked by your browser. Allow them in site settings to enable this.' : notificationPermission === 'unsupported' ? 'System notifications are not supported in this browser.' : 'When Chatter is in the background, tap Reply to open the right chat with the composer ready.'}</p>
       <div className="notification-items">
         {loading && !notifications.length ? <p className="notification-empty">Loading notifications…</p> : notifications.length ? notifications.map(item => <button type="button" className={`notification-item ${item.is_read ? '' : 'unread'}`} key={item.id} onClick={async () => { await markRead(item); setOpen(false); onOpenNotification?.(item); }}>
           <span className="notification-avatar">{item.actor?.avatar_url ? <img src={item.actor.avatar_url} alt=""/> : initials(item.actor?.display_name || item.actor?.username || 'C')}</span>
