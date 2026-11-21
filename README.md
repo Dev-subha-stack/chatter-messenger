@@ -68,3 +68,21 @@ Deploy over HTTPS, then use the browser's **Install app** or **Add to Home Scree
 ## Authentication email delivery
 
 Chatter uses Supabase Auth for confirmation and password-reset emails. Configure a valid custom SMTP provider in **Supabase Dashboard → Authentication → SMTP Settings** before allowing public sign-ups. For Gmail SMTP, use an account-specific Google App Password (with 2-Step Verification enabled), not the regular Gmail password. Check Supabase Auth logs for SMTP responses such as `535 5.7.8 BadCredentials` when delivery fails.
+
+## Background web push notifications
+
+Chatter supports real Web Push through its service worker and the `chatter-push` Supabase Edge Function.
+
+1. Generate a VAPID key pair with `npx web-push generate-vapid-keys`.
+2. Add the public key as `VITE_WEB_PUSH_PUBLIC_KEY` in Vercel (Production, Preview and Development). Use the same public key in local `.env.local` when testing locally.
+3. Add the matching private/public pair as Supabase Edge Function secrets. Keep the private key out of Git:
+   `supabase secrets set --project-ref qmvjgcxhsrxiicoabulu VAPID_PUBLIC_KEY=<public-key> VAPID_PRIVATE_KEY=<private-key> VAPID_SUBJECT=https://chatter22.vercel.app`
+4. Deploy the `chatter-push` Edge Function and ensure the `chatter_push_subscriptions` migration has been applied.
+5. Open Chatter over HTTPS, grant browser notification permission, then enable **Background push + Reply** in the Notifications menu.
+
+The Reply notification action opens the relevant conversation and focuses its composer. It does not create a native inline text-entry field inside the Android notification shade.
+
+## Phone number verification
+
+The sign-in screen offers Phone OTP as the default method and retains Email sign-in as a fallback for existing accounts. To enable SMS delivery, open **Supabase Dashboard → Authentication → Sign-in methods → Phone**, enable phone sign-ups, and configure an SMS provider (for example Twilio) with valid sender credentials. Supabase phone authentication uses the E.164 format (for India, `+91` followed by the 10-digit number). SMS delivery may incur provider charges and should be protected with appropriate rate limits and CAPTCHA before public rollout.
+
