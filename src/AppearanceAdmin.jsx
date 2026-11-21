@@ -17,6 +17,7 @@ export const DEFAULT_APPEARANCE = {
   customAccent: '',
   messageFontSize: 12,
   messageWidth: 78,
+  profilePostLayout: 'grid',
 };
 
 export const APPEARANCE_ACCENTS = {
@@ -55,6 +56,7 @@ export function AppearanceDashboard({ appearance, onChange, onReset, currentUser
         <div className="appearance-card"><div className="appearance-card-title"><Palette size={17}/><div><b>Custom accent</b><small>Choose any accent colour for the app</small></div></div><div className="appearance-custom-accent"><input type="color" aria-label="Custom app accent colour" value={appearance.customAccent || APPEARANCE_ACCENTS[appearance.accent]?.primary || '#A3E6D3'} onChange={event => update('customAccent', event.target.value)}/><span>{appearance.customAccent || 'Using preset accent'}</span><button type="button" onClick={() => update('customAccent', '')}>Use preset</button></div></div>
         <div className="appearance-card"><div className="appearance-card-title"><Type size={17}/><div><b>Message text size</b><small>Adjust chat readability</small></div></div><div className="appearance-font-size"><input type="range" min="11" max="17" step="1" value={appearance.messageFontSize || 12} onChange={event => update('messageFontSize', Number(event.target.value))}/><b>{appearance.messageFontSize || 12}px</b></div></div>
         <div className="appearance-card"><div className="appearance-card-title"><PanelsTopLeft size={17}/><div><b>Message width</b><small>Control how wide chat bubbles can be</small></div></div><div className="appearance-font-size"><input type="range" min="58" max="96" step="2" value={appearance.messageWidth || 78} onChange={event => update('messageWidth', Number(event.target.value))}/><b>{appearance.messageWidth || 78}%</b></div></div>
+        <div className="appearance-card"><div className="appearance-card-title"><PanelsTopLeft size={17}/><div><b>Profile post layout</b><small>Choose how your own posts appear on your profile</small></div></div>{choices([{id:'grid',label:'Instagram-style grid'},{id:'list',label:'Full post cards'}], 'profilePostLayout')}</div>
         <div className="appearance-card"><EmojiSettings currentUserId={currentUserId} customEmojis={customEmojis || []} onChange={onCustomEmojisChange}/></div>
       </div>
       <aside className="appearance-preview-wrap"><span className="eyebrow">LIVE PREVIEW</span><div className="appearance-preview" data-bubble-style={appearance.bubbleStyle} style={{'--mint':appearance.customAccent || APPEARANCE_ACCENTS[appearance.accent]?.primary || APPEARANCE_ACCENTS.mint.primary,'--chat-message-width':`${appearance.messageWidth || 78}%`}}><div className="preview-top"><span className="preview-avatar">S</span><div><b>Sam</b><small>online now</small></div><i/></div><div className="preview-chat"><div className="preview-bubble theirs">Hey! How's your day going?</div><div className="preview-bubble mine">Pretty good. This looks nice!</div></div><div className="preview-input"><span>Write a message…</span><b>↑</b></div></div><p>Preview reflects your accent colour and message shape.</p></aside>
