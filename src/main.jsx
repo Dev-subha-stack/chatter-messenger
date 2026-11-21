@@ -476,8 +476,54 @@ function ChatPanel({ conversation, other, currentProfile, messages, onSend, onSe
 
 
 
-function ProfilePosts({ profile, posts, loadingPosts, currentUserId, profiles, customEmojis, onOpenMedia, onCreatePost, layout, onLayoutChange }) {
-  const ownPosts = (posts || []).filter(post => post.author_id === profile?.id);
+function ProfilePosts({ profile, currentUserId, profiles, customEmojis, onOpenMedia, onCreatePost, layout, onLayoutChange }) {
+  const [ownPosts, setOwnPosts] = useState([]);
+  const [loadingOwnPosts, setLoadingOwnPosts] = useState(true);
+  const [loadError, setLoadError] = useState('');
+
+  useEffect(() => {
+    if (!profile?.id) {
+      setOwnPosts([]);
+      setLoadingOwnPosts(false);
+      return;
+    }
+    let alive = true;
+    const load = async (showLoader = false) => {
+      if (showLoader) setLoadingOwnPosts(true);
+      try {
+        const { data, error } = await supabase.from('posts')
+          .select('id,author_id,content,created_at,media_path,media_type,media_name,media_size,poll_id,author:profiles!posts_author_id_fkey(id,display_name,username,avatar_url,username_color)')
+          .eq('author_id', profile.id)
+          .order('created_at', { ascending: false })
+          .limit(100);
+        if (error) throw error;
+        const hydrated = await Promise.all((data || []).map(async post => {
+          if (!post.media_path) return { ...post, media_url: null };
+          const { data: signed, error: signedError } = await supabase.storage.from('post-media').createSignedUrl(post.media_path, 3600);
+          if (signedError) console.warn('Could not create a profile post media link:', signedError.message);
+          return { ...post, media_url: signed?.signedUrl || null };
+        }));
+        const withPolls = await hydratePollRows(hydrated);
+        if (alive) {
+          setOwnPosts(withPolls);
+          setLoadError('');
+        }
+      } catch (error) {
+        if (alive) setLoadError(error?.message || 'Could not load your posts.');
+      } finally {
+        if (alive && showLoader) setLoadingOwnPosts(false);
+      }
+    };
+    load(true);
+    const channel = supabase.channel(`profile-posts:${profile.id}`)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'posts', filter: `author_id=eq.${profile.id}` }, () => load(false))
+      .subscribe();
+    return () => {
+      alive = false;
+      supabase.removeChannel(channel);
+    };
+  }, [profile?.id]);
+
   const openPost = post => {
     if (!post.media_url) { onLayoutChange('list'); return; }
     onOpenMedia?.({
@@ -502,7 +548,8 @@ function ProfilePosts({ profile, posts, loadingPosts, currentUserId, profiles, c
         <button type="button" className="primary-button" onClick={onCreatePost}><Plus size={15}/> Create post</button>
       </div>
     </div>
-    {loadingPosts && !ownPosts.length ? <div className="profile-posts-empty">Loading your posts…</div> : !ownPosts.length ? <div className="profile-posts-empty">
+    {loadError && <div className="profile-posts-empty" role="status">{loadError}</div>}
+    {loadingOwnPosts && !ownPosts.length ? <div className="profile-posts-empty">Loading your posts…</div> : !ownPosts.length && !loadError ? <div className="profile-posts-empty">
       <div className="profile-posts-empty-icon"><Image size={22}/></div>
       <b>Your profile is ready for its first post.</b>
       <p>Share a photo, video, thought or poll. Your posts will appear here like a personal feed.</p>
@@ -1479,7 +1526,7 @@ function App() {
            </div>
            {!!profile?.bio_links?.length && <div className="profile-dashboard-links">{profile.bio_links.map((link,index)=>{const safe=safeExternalUrl(link);return safe?<a key={index} href={safe} target="_blank" rel="noopener noreferrer"><ArrowRight size={13}/>{safe.replace(/^https?:\/\//,'').replace(/\/$/,'')}</a>:null;})}</div>}
            <ProfileStats profileId={profile?.id}/>
-           <ProfilePosts profile={profile} posts={posts} loadingPosts={loadingPosts} currentUserId={profile.id} profiles={profiles} customEmojis={customEmojis} onOpenMedia={setMediaViewer} onCreatePost={()=>setActiveTab('posts')} layout={appearance.profilePostLayout || 'grid'} onLayoutChange={value=>setAppearance(current=>({...current,profilePostLayout:value}))}/>
+           <ProfilePosts profile={profile} currentUserId={profile.id} profiles={profiles} customEmojis={customEmojis} onOpenMedia={setMediaViewer} onCreatePost={()=>setActiveTab('posts')} layout={appearance.profilePostLayout || 'grid'} onLayoutChange={value=>setAppearance(current=>({...current,profilePostLayout:value}))}/>
            <button className="profile-signout" onClick={signOut}><LogOut size={16}/> Sign out</button>
          </section>}
       </main></div>
