@@ -58,6 +58,17 @@ const hydratePollRows = async rows => {
   const byId = new Map((polls || []).map(poll => [poll.id, { ...poll, options: (options || []).filter(option => option.poll_id === poll.id) }]));
   return (rows || []).map(row => ({ ...row, poll: row.poll_id ? (byId.get(row.poll_id) || null) : null }));
 };
+const requestPushDelivery = async notificationId => {
+  if (!notificationId || !supabase) return;
+  try {
+    const { data, error } = await supabase.functions.invoke('chatter-push', { body: { notificationId } });
+    if (error) console.warn('Background push could not be queued:', error.message);
+    else if (data?.error) console.warn('Background push was not delivered:', data.error);
+  } catch (error) {
+    console.warn('Background push request failed:', error);
+  }
+};
+
 function CompressionStatus({ status }) {
   if (!status) return null;
   const active = status.phase === 'compressing';
@@ -717,11 +728,12 @@ function PublicProfileModal({ profile, onClose, isOnline, currentUserId }) {
       if (followError && followError.code !== '23505') setError(followError.message);
       else {
         setFollowing(true); setFollowers(value => value + 1);
-        const { error: noticeError } = await supabase.from('chatter_notifications').insert({
+        const { data: followerNotice, error: noticeError } = await supabase.from('chatter_notifications').insert({
           recipient_user_id: profile.id, actor_user_id: currentUserId, notification_type: 'new_follower',
           target_type: 'profile', target_id: currentUserId, body: 'Started following you.',
-        });
+        }).select('id').single();
         if (noticeError) console.warn('Follower notification could not be saved:', noticeError.message);
+        else void requestPushDelivery(followerNotice?.id);
       }
     }
     setBusy(false);
@@ -1365,10 +1377,12 @@ function App() {
           ? `You were pinged by ${profile.display_name || 'a Chatter member'}: ${String(content || 'sent you a message').slice(0, 115)}`
           : 'Sent you a message: ' + String(content || '').slice(0, 100),
       };
-      const { error: noticeError } = await supabase.from('chatter_notifications').insert(notice);
+      const { data: savedNotice, error: noticeError } = await supabase.from('chatter_notifications').insert(notice).select('id').single();
       if (noticeError) {
         console.warn('Message notification could not be saved:', noticeError.message);
         notify('Message sent, but the ping notification could not be saved.');
+      } else {
+        void requestPushDelivery(savedNotice?.id);
       }
     }
     setMessages(current => current.some(m => m.id === data.id) ? current : [...current, data]);
@@ -1422,12 +1436,13 @@ function App() {
       }
     }
     if (mentions.length) {
-      const { error: pingError } = await supabase.from('chatter_notifications').insert(mentions.map(recipient_user_id => ({
+      const { data: mentionNotices, error: pingError } = await supabase.from('chatter_notifications').insert(mentions.map(recipient_user_id => ({
         recipient_user_id, actor_user_id: profile.id, notification_type: 'post_mention',
         target_type: 'post', target_id: createdPost.id,
         body: `You were mentioned in a post by ${profile.display_name || 'a Chatter member'}.`,
-      })));
+      }))).select('id');
       if (pingError) console.warn('Post mention notifications were not delivered:', pingError.message);
+      else (mentionNotices || []).forEach(item => { void requestPushDelivery(item.id); });
     }
     await loadPosts(false);
     notify('Your post is live.');
@@ -1448,11 +1463,12 @@ function App() {
     }).select().single();
     if(error) throw error;
     if (active?.other_id && active.other_id !== profile.id) {
-      const { error: noticeError } = await supabase.from('chatter_notifications').insert({
+      const { data: savedNotice, error: noticeError } = await supabase.from('chatter_notifications').insert({
         recipient_user_id: active.other_id, actor_user_id: profile.id, notification_type: 'new_message',
         target_type: 'conversation', target_id: active.id, body: 'Sent you an attachment: ' + file.name.slice(0,120),
-      });
+      }).select('id').single();
       if (noticeError) console.warn('Attachment notification could not be saved:', noticeError.message);
+      else void requestPushDelivery(savedNotice?.id);
     }
     const {data:signed}=await supabase.storage.from('chat-media').createSignedUrl(path,3600);
     const localMessage={...data,attachment_url:signed?.signedUrl||null};
