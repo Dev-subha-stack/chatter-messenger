@@ -406,9 +406,20 @@ export function NotificationCenter({ currentUserId, onOpenNotification }) {
     (async () => {
       try {
         if (Notification.permission !== 'granted') return;
+        const { data: senderStatus, error: senderStatusError } = await supabase.functions.invoke('chatter-push', { body: { action: 'check' } });
+        if (senderStatusError || !senderStatus?.configured) {
+          if (alive) {
+            setSystemEnabled(false);
+            setPushError('Push sender is waiting for the VAPID private key in Supabase Edge Function secrets.');
+          }
+          return;
+        }
         const registration = await navigator.serviceWorker.ready;
         const subscription = await registration.pushManager.getSubscription();
-        if (!subscription) return;
+        if (!subscription) {
+          if (alive) setSystemEnabled(false);
+          return;
+        }
         const { data, error } = await supabase.from('chatter_push_subscriptions')
           .select('id,endpoint').eq('user_id', currentUserId);
         if (error) throw error;
@@ -443,6 +454,10 @@ export function NotificationCenter({ currentUserId, onOpenNotification }) {
         return;
       }
 
+      const { data: senderStatus, error: senderStatusError } = await supabase.functions.invoke('chatter-push', { body: { action: 'check' } });
+      if (senderStatusError || !senderStatus?.configured) {
+        throw new Error('Push is not fully configured yet. Add the VAPID private key to Supabase Edge Function secrets, then retry.');
+      }
       const permission = Notification.permission === 'default'
         ? await Notification.requestPermission()
         : Notification.permission;
