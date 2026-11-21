@@ -475,6 +475,51 @@ function ChatPanel({ conversation, other, currentProfile, messages, onSend, onSe
 }
 
 
+
+function ProfilePosts({ profile, posts, loadingPosts, currentUserId, profiles, customEmojis, onOpenMedia, onCreatePost, layout, onLayoutChange }) {
+  const ownPosts = (posts || []).filter(post => post.author_id === profile?.id);
+  const openPost = post => {
+    if (!post.media_url) { onLayoutChange('list'); return; }
+    onOpenMedia?.({
+      src: post.media_url,
+      type: post.media_type?.startsWith('video/') ? 'video' : 'image',
+      name: post.media_name || 'Post media',
+    });
+  };
+
+  return <section className="profile-posts-section">
+    <div className="profile-posts-heading">
+      <div>
+        <span className="eyebrow">YOUR COMMUNITY</span>
+        <h2>Your posts</h2>
+        <p>Photos, videos and moments you have shared on Chatter.</p>
+      </div>
+      <div className="profile-posts-actions">
+        <div className="profile-post-layout" role="group" aria-label="Profile post layout">
+          <button type="button" className={layout === 'grid' ? 'selected' : ''} aria-pressed={layout === 'grid'} onClick={() => onLayoutChange('grid')} title="Grid view"><PanelsTopLeft size={16}/></button>
+          <button type="button" className={layout === 'list' ? 'selected' : ''} aria-pressed={layout === 'list'} onClick={() => onLayoutChange('list')} title="List view"><Newspaper size={16}/></button>
+        </div>
+        <button type="button" className="primary-button" onClick={onCreatePost}><Plus size={15}/> Create post</button>
+      </div>
+    </div>
+    {loadingPosts && !ownPosts.length ? <div className="profile-posts-empty">Loading your posts…</div> : !ownPosts.length ? <div className="profile-posts-empty">
+      <div className="profile-posts-empty-icon"><Image size={22}/></div>
+      <b>Your profile is ready for its first post.</b>
+      <p>Share a photo, video, thought or poll. Your posts will appear here like a personal feed.</p>
+      <button type="button" className="primary-button" onClick={onCreatePost}><Plus size={15}/> Share your first post</button>
+    </div> : layout === 'list' ? <PostFeed posts={ownPosts} loading={loadingPosts} onOpenMedia={onOpenMedia} currentUserId={currentUserId} profiles={profiles} customEmojis={customEmojis}/> :
+      <div className="profile-post-grid">
+        {ownPosts.map(post => {
+          const isVideo = post.media_type?.startsWith('video/');
+          return <button type="button" className="profile-post-tile" key={post.id} onClick={() => openPost(post)} aria-label={post.media_url ? 'Open post media' : 'View post details'}>
+            {post.media_url && isVideo ? <video src={post.media_url} muted playsInline preload="metadata"/> : post.media_url ? <img src={post.media_url} alt={post.media_name || 'Post'}/> : <span className="profile-post-tile-text">{post.content || 'A poll shared with the community'}</span>}
+            <span className="profile-post-tile-meta">{isVideo ? <Play size={14} fill="currentColor"/> : post.poll ? <BarChart3 size={14}/> : post.media_url ? <Image size={14}/> : <MessageCircle size={14}/>}<span>{isVideo ? 'Video' : post.poll ? 'Poll' : post.media_url ? 'Photo' : 'Post'}</span></span>
+          </button>;
+        })}
+      </div>}
+  </section>;
+}
+
 function ProfileStats({ profileId }) {
   const [stats, setStats] = useState({ followers: 0, following: 0, posts: 0 });
   const [loading, setLoading] = useState(true);
@@ -1000,6 +1045,22 @@ function App() {
     return () => { supabase.removeChannel(channel); };
   }, [profile?.id, loadPosts]);
 
+
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const targetId = params.get('openConversation');
+    if (!targetId || !conversations.length) return;
+    const target = conversations.find(row => row.id === targetId);
+    if (!target) return;
+    setActive(target);
+    setActiveTab('chats');
+    setMobileChatOpen(true);
+    params.delete('openConversation');
+    params.delete('reply');
+    const remainingQuery = params.toString();
+    window.history.replaceState({}, document.title, `${window.location.pathname}${remainingQuery ? `?${remainingQuery}` : ''}${window.location.hash}`);
+  }, [conversations]);
+
   useEffect(() => {
     if (!profile?.id || !supabase) return;
     const channel = supabase.channel('chatter:profiles')
@@ -1392,7 +1453,24 @@ function App() {
         {activeTab==='posts'&&<PostDashboard profile={profile} posts={posts} loadingPosts={loadingPosts} currentUserId={profile.id} profiles={profiles} customEmojis={customEmojis} onCreatePost={createPost} onOpenMedia={setMediaViewer} onNewChat={openNewChat}/>} 
         {activeTab==='appearance'&&<AppearanceDashboard appearance={appearance} onChange={setAppearance} currentUserId={profile.id} customEmojis={customEmojis} onCustomEmojisChange={setCustomEmojis} onReset={()=>{setAppearance(DEFAULT_APPEARANCE);notify('Appearance reset for this browser.');}}/>}
         {activeTab==='admin'&&isAdmin&&<AdminDashboard onlineUsers={onlineUsers} currentUserId={profile?.id} onNotify={notify}/>}
-        {activeTab==='profile'&&<section className="profile-dashboard"><span className="eyebrow">YOUR ACCOUNT</span><h1>Your <em>profile.</em></h1><div className="profile-dashboard-card" data-profile-style={profile?.profile_style || 'gradient'}><div className="profile-dashboard-banner" style={profile?.banner_url?{backgroundImage:`url(${profile.banner_url})`}:{background:`linear-gradient(130deg,${profile?.profile_theme_color || '#34544c'},#1d4140)`}}/><div className="profile-dashboard-info"><Avatar profile={profile} size="xl"/><div><h2>{profile?.display_name}</h2><span style={{color:profile?.username_color || '#A3E6D3'}}>@{profile?.username}</span><p>{profile?.bio||'Add a little about yourself.'}</p>{profile?.profile_status && <small className="profile-dashboard-status">{profile.profile_status}</small>}</div><button className="primary-button" onClick={()=>setShowProfile(true)}><Settings size={15}/> Edit profile</button></div></div><ProfileStats profileId={profile?.id}/><button className="profile-signout" onClick={signOut}><LogOut size={16}/> Sign out</button></section>}
+        {activeTab==='profile'&&<section className="profile-dashboard">
+           <span className="eyebrow">YOUR ACCOUNT</span><h1>Your <em>profile.</em></h1>
+           <div className="profile-dashboard-card" data-profile-style={profile?.profile_style || 'gradient'}>
+             <div className="profile-dashboard-banner" style={profile?.banner_url?{backgroundImage:`url(${profile.banner_url})`}:{background:`linear-gradient(130deg,${profile?.profile_theme_color || '#34544c'},#1d4140)`}}/>
+             <div className="profile-dashboard-info">
+               <Avatar profile={profile} size="xl"/>
+               <div><h2>{profile?.display_name}</h2><span style={{color:profile?.username_color || '#A3E6D3'}}>@{profile?.username}</span><p>{profile?.bio||'Add a little about yourself.'}</p>{profile?.profile_status && <small className="profile-dashboard-status">{profile.profile_status}</small>}</div>
+               <div className="profile-dashboard-actions">
+                 <button className="profile-edit-button" onClick={()=>setShowProfile(true)}><Settings size={15}/> Edit profile</button>
+                 <button className="primary-button" onClick={()=>setActiveTab('posts')}><Plus size={15}/> Create post</button>
+               </div>
+             </div>
+           </div>
+           {!!profile?.bio_links?.length && <div className="profile-dashboard-links">{profile.bio_links.map((link,index)=>{const safe=safeExternalUrl(link);return safe?<a key={index} href={safe} target="_blank" rel="noopener noreferrer"><ArrowRight size={13}/>{safe.replace(/^https?:\/\//,'').replace(/\/$/,'')}</a>:null;})}</div>}
+           <ProfileStats profileId={profile?.id}/>
+           <ProfilePosts profile={profile} posts={posts} loadingPosts={loadingPosts} currentUserId={profile.id} profiles={profiles} customEmojis={customEmojis} onOpenMedia={setMediaViewer} onCreatePost={()=>setActiveTab('posts')} layout={appearance.profilePostLayout || 'grid'} onLayoutChange={value=>setAppearance(current=>({...current,profilePostLayout:value}))}/>
+           <button className="profile-signout" onClick={signOut}><LogOut size={16}/> Sign out</button>
+         </section>}
       </main></div>
     <nav className="mobile-bottom-nav">{tabs.map(t=><button key={t.id} className={activeTab===t.id?'active':''} onClick={()=>{setActiveTab(t.id);setMobileChatOpen(false);}}><t.icon size={20}/><span>{t.label}</span></button>)}</nav>
     {showProfile&&<ProfileModal profile={profile} onClose={()=>setShowProfile(false)} onSave={saveProfile} onSignOut={signOut}/>}
