@@ -496,7 +496,7 @@ function ProfilePosts({ profile, posts, loadingPosts, currentUserId, profiles, c
       </div>
       <div className="profile-posts-actions">
         <div className="profile-post-layout" role="group" aria-label="Profile post layout">
-          <button type="button" className={layout === 'grid' ? 'selected' : ''} aria-pressed={layout === 'grid'} onClick={() => onLayoutChange('grid')} title="Grid view"><PanelsTopLeft size={16}/></button>
+          <button type="button" className={layout === 'grid' ? 'selected' : ''} aria-pressed={layout === 'grid'} onClick={() => onLayoutChange('grid')} title="Grid view"><Image size={16}/></button>
           <button type="button" className={layout === 'list' ? 'selected' : ''} aria-pressed={layout === 'list'} onClick={() => onLayoutChange('list')} title="List view"><Newspaper size={16}/></button>
         </div>
         <button type="button" className="primary-button" onClick={onCreatePost}><Plus size={15}/> Create post</button>
