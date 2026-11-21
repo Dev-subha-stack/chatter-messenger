@@ -76,13 +76,19 @@ Deno.serve(async request => {
   } catch {
     return json({ error: "Expected a JSON body." }, 400);
   }
+  const publicKey = Deno.env.get("VAPID_PUBLIC_KEY");
+  const privateKey = Deno.env.get("VAPID_PRIVATE_KEY");
+  if (body?.action === "check") {
+    if (!publicKey || !privateKey) {
+      return json({ configured: false, error: "Add VAPID_PUBLIC_KEY and VAPID_PRIVATE_KEY to Supabase Edge Function secrets." }, 503);
+    }
+    return json({ configured: true });
+  }
+
   const notificationId = String(body?.notificationId || "");
   if (!/^[0-9a-f-]{36}$/i.test(notificationId)) {
     return json({ error: "A valid notification ID is required." }, 400);
   }
-
-  const publicKey = Deno.env.get("VAPID_PUBLIC_KEY");
-  const privateKey = Deno.env.get("VAPID_PRIVATE_KEY");
   if (!publicKey || !privateKey) {
     return json({ error: "Push is waiting for VAPID_PUBLIC_KEY and VAPID_PRIVATE_KEY Edge Function secrets." }, 503);
   }
