@@ -127,6 +127,8 @@ Deno.serve(async request => {
     ? "/?openConversation=" + encodeURIComponent(notice.target_id) + "&reply=1"
     : "/?openTab=posts";
   const payload = {
+    notificationId: notice.id,
+    tag: "chatter-" + notice.id,
     title: isConversation ? actorName + " sent you a message" : actorName + " on Chatter",
     body: String(notice.body || "You have a new notification.").slice(0, 180),
     icon: "/icons/icon-192.svg",
