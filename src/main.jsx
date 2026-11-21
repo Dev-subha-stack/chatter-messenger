@@ -1048,17 +1048,28 @@ function App() {
 
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
+    const requestedTab = params.get('openTab');
+    if (requestedTab === 'posts') {
+      setActiveTab('posts');
+      params.delete('openTab');
+    }
+
     const targetId = params.get('openConversation');
-    if (!targetId || !conversations.length) return;
-    const target = conversations.find(row => row.id === targetId);
-    if (!target) return;
-    setActive(target);
-    setActiveTab('chats');
-    setMobileChatOpen(true);
-    params.delete('openConversation');
-    params.delete('reply');
+    if (targetId) {
+      if (!conversations.length) return;
+      const target = conversations.find(row => row.id === targetId);
+      if (!target) return;
+      setActive(target);
+      setActiveTab('chats');
+      setMobileChatOpen(true);
+      params.delete('openConversation');
+      params.delete('reply');
+    }
+
     const remainingQuery = params.toString();
-    window.history.replaceState({}, document.title, `${window.location.pathname}${remainingQuery ? `?${remainingQuery}` : ''}${window.location.hash}`);
+    if (remainingQuery !== new URLSearchParams(window.location.search).toString()) {
+      window.history.replaceState({}, document.title, `${window.location.pathname}${remainingQuery ? `?${remainingQuery}` : ''}${window.location.hash}`);
+    }
   }, [conversations]);
 
   useEffect(() => {
